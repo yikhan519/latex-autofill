@@ -1,0 +1,9 @@
+{
+  "id": "latex-autofill",
+  "name": "LaTeX Autofill",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "IDE-style LaTeX autocomplete inside math blocks. Search commands in English or Chinese and insert them with Enter or Tab.",
+  "author": "hanyik",
+  "isDesktopOnly": false
+}

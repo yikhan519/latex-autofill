@@ -1,0 +1,164 @@
+.latex-lookup-modal,
+.latex-lookup-suggest {
+  --lookup-match: #6aa7ff;
+  --lookup-selected: #3c5d8c;
+  --lookup-selected-text: #d6e4f8;
+  --lookup-muted: #8b939c;
+}
+
+.theme-light .latex-lookup-modal,
+.theme-light .latex-lookup-suggest {
+  --lookup-match: #1858c7;
+  --lookup-selected: #d3e4fb;
+  --lookup-selected-text: #1c2836;
+  --lookup-muted: #667085;
+}
+
+.prompt.latex-lookup-modal {
+  width: min(720px, 92vw);
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.prompt.latex-lookup-modal .prompt-input {
+  border: none;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.prompt.latex-lookup-modal .prompt-results {
+  padding: 4px 0;
+}
+
+.suggestion-container.latex-lookup-suggest {
+  width: 460px;
+  max-width: 90vw;
+  padding: 0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.suggestion-container.latex-lookup-suggest .suggestion {
+  padding: 2px 0;
+}
+
+.latex-lookup-modal .suggestion-item,
+.latex-lookup-suggest .suggestion-item {
+  margin: 0;
+  padding: 2px 12px 2px 8px;
+  border-radius: 0;
+  font-size: 13.5px;
+}
+
+.latex-lookup-modal .suggestion-item.is-selected,
+.latex-lookup-suggest .suggestion-item.is-selected {
+  background-color: var(--lookup-selected);
+  color: var(--lookup-selected-text);
+}
+
+.latex-lookup-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 24px;
+}
+
+.latex-lookup-icon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #3c9a72;
+  border-radius: 50%;
+  color: #3c9a72;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.latex-lookup-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.latex-lookup-name {
+  color: var(--text-normal);
+  white-space: nowrap;
+}
+
+.latex-lookup-en {
+  color: var(--text-normal);
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.latex-lookup-match {
+  color: var(--lookup-match);
+  font-weight: 650;
+}
+
+.latex-lookup-cat {
+  color: var(--lookup-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+code.latex-lookup-code {
+  flex: 0 1 48%;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--lookup-muted);
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestion-item.is-selected .latex-lookup-name,
+.suggestion-item.is-selected .latex-lookup-en,
+.suggestion-item.is-selected .latex-lookup-match {
+  color: var(--lookup-selected-text);
+}
+
+.suggestion-item.is-selected .latex-lookup-match {
+  font-weight: 700;
+}
+
+.suggestion-item.is-selected .latex-lookup-cat,
+.suggestion-item.is-selected code.latex-lookup-code {
+  color: var(--lookup-selected-text);
+  opacity: 0.75;
+}
+
+.latex-lookup-modal .prompt-instructions,
+.latex-lookup-suggest .prompt-instructions {
+  margin: 0;
+  padding: 5px 12px 6px;
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.latex-lookup-modal .prompt-instruction-command,
+.latex-lookup-suggest .prompt-instruction-command {
+  color: var(--text-accent);
+  font-weight: 600;
+}
