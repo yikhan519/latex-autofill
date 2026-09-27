@@ -5,6 +5,7 @@ const {
   MarkdownView,
   Notice,
   prepareFuzzySearch,
+  moment,
 } = require("obsidian");
 const { StateField, StateEffect, Prec } = require("@codemirror/state");
 const { EditorView, Decoration, keymap } = require("@codemirror/view");
@@ -1762,6 +1763,47 @@ function plainText(entry) {
   return entry.extra ? entry.tex.replace(/[#~]/g, "") : entry.tex;
 }
 
+const STRINGS = {
+  en: {
+    search: "Search LaTeX",
+    placeholder: "Search LaTeX, e.g. sum, integral, matrix, alpha, 求和",
+    insert: "insert",
+    select: "select",
+    close: "close",
+    copy: "copy",
+    insertWrapped: "insert wrapped in $ $",
+    copyWrapped: "copy wrapped in $ $",
+    copied: "Copied: ",
+    copyFailed: "Copy failed",
+  },
+  zh: {
+    search: "搜索 LaTeX 写法",
+    placeholder: "搜索 LaTeX 写法，例如：求和、积分、矩阵、alpha",
+    insert: "插入",
+    select: "选择",
+    close: "关闭",
+    copy: "复制",
+    insertWrapped: "插入并用 $ $ 包裹",
+    copyWrapped: "复制（带 $ $）",
+    copied: "已复制：",
+    copyFailed: "复制失败",
+  },
+};
+
+// Obsidian stores the interface language in localStorage only when it isn't English.
+function uiLanguage() {
+  let lang = null;
+  try {
+    lang = window.localStorage.getItem("language");
+  } catch (e) {
+    lang = null;
+  }
+  if (!lang && moment) lang = moment.locale();
+  return /^zh/i.test(lang || "") ? "zh" : "en";
+}
+
+let S = STRINGS.en;
+
 const HAN = "\\u3400-\\u9fff";
 const BACKSLASH_TRIGGER = new RegExp(`\\\\([A-Za-z${HAN}]+)$`);
 const WORD_TRIGGER = new RegExp(`(?:^|[^A-Za-z${HAN}\\\\])([${HAN}]+|[A-Za-z]{3,})$`);
@@ -1772,9 +1814,9 @@ class LatexAutocomplete extends EditorSuggest {
     this.limit = 20;
     if (this.suggestEl) this.suggestEl.addClass("latex-lookup-suggest");
     this.setInstructions([
-      { command: "↵ / Tab", purpose: "插入" },
-      { command: "↑↓", purpose: "选择" },
-      { command: "esc", purpose: "关闭" },
+      { command: "↵ / Tab", purpose: S.insert },
+      { command: "↑↓", purpose: S.select },
+      { command: "esc", purpose: S.close },
     ]);
     this.scope.register([], "Tab", (evt) => {
       if (this.suggestions && this.suggestions.useSelectedItem) {
@@ -1835,12 +1877,12 @@ class LatexLookupModal extends SuggestModal {
     this.editor = editor;
     this.limit = 60;
     this.modalEl.addClass("latex-lookup-modal");
-    this.setPlaceholder("搜索 LaTeX 写法，例如：求和、积分、矩阵、alpha");
+    this.setPlaceholder(S.placeholder);
     this.setInstructions([
-      { command: "↵", purpose: editor ? "插入" : "复制" },
-      { command: "Shift ↵", purpose: editor ? "插入并用 $ $ 包裹" : "复制（带 $ $）" },
-      { command: "Mod ↵", purpose: "复制" },
-      { command: "esc", purpose: "关闭" },
+      { command: "↵", purpose: editor ? S.insert : S.copy },
+      { command: "Shift ↵", purpose: editor ? S.insertWrapped : S.copyWrapped },
+      { command: "Mod ↵", purpose: S.copy },
+      { command: "esc", purpose: S.close },
     ]);
     this.scope.register(["Shift"], "Enter", (evt) => { this.selectActiveSuggestion(evt); return false; });
     this.scope.register(["Mod"], "Enter", (evt) => { this.selectActiveSuggestion(evt); return false; });
@@ -1861,8 +1903,8 @@ class LatexLookupModal extends SuggestModal {
     if (copyOnly) {
       const text = wrap ? `$${plainText(entry)}$` : plainText(entry);
       navigator.clipboard.writeText(text).then(
-        () => new Notice(`已复制：${text}`),
-        () => new Notice("复制失败"),
+        () => new Notice(`${S.copied}${text}`),
+        () => new Notice(S.copyFailed),
       );
       return;
     }
@@ -1875,6 +1917,7 @@ class LatexLookupModal extends SuggestModal {
 
 module.exports = class LatexLookupPlugin extends Plugin {
   async onload() {
+    S = STRINGS[uiLanguage()];
     this.registerEditorExtension([snippetField, snippetKeymap]);
     const suggest = new LatexAutocomplete(this.app);
     this.registerEditorSuggest(suggest);
@@ -1899,10 +1942,10 @@ module.exports = class LatexLookupPlugin extends Plugin {
       new LatexLookupModal(this.app, editor).open();
     };
 
-    this.addRibbonIcon("sigma", "搜索 LaTeX 写法", open);
+    this.addRibbonIcon("sigma", S.search, open);
     this.addCommand({
       id: "open-latex-lookup",
-      name: "搜索 LaTeX 写法",
+      name: S.search,
       callback: open,
     });
   }
