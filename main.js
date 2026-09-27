@@ -1453,11 +1453,12 @@ function renderRow(entry, el, query) {
   }
 }
 
-function mathMode(text) {
+function mathContext(text) {
   let inFence = false;
   let inCode = false;
   let inline = false;
   let display = false;
+  let start = -1;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     const atLineStart = i === 0 || text[i - 1] === "\n";
@@ -1474,17 +1475,54 @@ function mathMode(text) {
     if (ch !== "$") continue;
     if (text[i + 1] === "$" && !inline) {
       display = !display;
+      start = i + 2;
       i++;
     } else if (!display) {
       inline = !inline;
+      start = i + 1;
     }
   }
-  if (display) return "display";
-  return inline ? "inline" : null;
+  const mode = display ? "display" : inline ? "inline" : null;
+  return { mode, start: mode ? start : -1 };
 }
 
-function mathModeAt(editor, pos = editor.getCursor("from")) {
-  return mathMode(editor.getRange({ line: 0, ch: 0 }, pos));
+function mathContextAt(editor, pos = editor.getCursor("from")) {
+  return mathContext(editor.getRange({ line: 0, ch: 0 }, pos));
+}
+
+function mathModeAt(editor, pos) {
+  return mathContextAt(editor, pos).mode;
+}
+
+// Commands whose braced argument is typeset as text, where ordinary words are expected.
+const TEXT_COMMANDS = new Set([
+  "text", "textrm", "textbf", "textit", "textsf", "texttt", "textup", "textmd",
+  "textnormal", "textsl", "textsc", "emph", "mbox", "hbox", "fbox",
+  "operatorname", "operatorname*", "tag", "tag*", "intertext",
+]);
+const COMMAND_NAME = /[A-Za-z]+\*?/y;
+
+function inTextMode(math) {
+  const stack = [];
+  let pending = false;
+  for (let i = 0; i < math.length; i++) {
+    const ch = math[i];
+    if (ch === "\\") {
+      COMMAND_NAME.lastIndex = i + 1;
+      const m = COMMAND_NAME.exec(math);
+      pending = !!m && TEXT_COMMANDS.has(m[0]);
+      i += m ? m[0].length : 1;
+    } else if (ch === "{") {
+      stack.push(pending || (stack.length > 0 && stack[stack.length - 1]));
+      pending = false;
+    } else if (ch === "}") {
+      stack.pop();
+      pending = false;
+    } else if (!/\s/.test(ch)) {
+      pending = false;
+    }
+  }
+  return stack.length > 0 && stack[stack.length - 1];
 }
 
 function matchBrace(tex, open) {
@@ -1749,14 +1787,18 @@ class LatexAutocomplete extends EditorSuggest {
 
   onTrigger(cursor, editor) {
     const before = editor.getLine(cursor.line).slice(0, cursor.ch);
-    const mode = mathModeAt(editor, cursor);
+    const { mode, start: mathStart } = mathContextAt(editor, cursor);
 
     let match = before.match(BACKSLASH_TRIGGER);
     let start;
     if (match) {
       start = cursor.ch - match[0].length;
       this.fromBackslash = true;
-    } else if (mode && (match = before.match(WORD_TRIGGER))) {
+    } else if (
+      mode
+      && (match = before.match(WORD_TRIGGER))
+      && !inTextMode(editor.getRange(editor.offsetToPos(mathStart), cursor))
+    ) {
       start = cursor.ch - match[1].length;
       this.fromBackslash = false;
     } else {
