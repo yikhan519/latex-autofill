@@ -59,7 +59,7 @@ Each `{...}` argument and each matrix cell becomes a placeholder automatically. 
 
 ## Credits
 
-The plain command list comes from [Completr](https://github.com/tth05/obsidian-completr) by tth05, used under the MIT License. See [LICENSE](LICENSE).
+The plain command list comes from [Completr](https://github.com/tth05/obsidian-completr) by tth05, used under the MIT License. See [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
 
 ---
 
@@ -98,7 +98,7 @@ The plain command list comes from [Completr](https://github.com/tth05/obsidian-c
 
 ### 致谢
 
-普通命令表来自 tth05 的 [Completr](https://github.com/tth05/obsidian-completr)，按 MIT 协议使用，详见 [LICENSE](LICENSE)。
+普通命令表来自 tth05 的 [Completr](https://github.com/tth05/obsidian-completr)，按 MIT 协议使用，详见 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
 
 ## License
 

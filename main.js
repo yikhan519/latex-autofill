@@ -228,6 +228,7 @@ const GREEK_UPPER = [
 ];
 
 // Command list from Completr (MIT License, Copyright (c) 2021 tth05), https://github.com/tth05/obsidian-completr
+// The full license text is in THIRD_PARTY_LICENSES.
 // `#` marks a placeholder and `~` marks where the cursor ends up.
 const COMPLETR_COMMANDS = [
   "\\begin{align}\n~\n\\end{align}",
