@@ -116,6 +116,13 @@
   border-radius: 2px;
 }
 
+.latex-lookup-stop-empty {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  vertical-align: text-bottom;
+}
+
 .latex-lookup-cat {
   color: var(--lookup-muted);
   font-size: 12px;

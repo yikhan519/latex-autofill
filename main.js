@@ -8,7 +8,7 @@ const {
   moment,
 } = require("obsidian");
 const { StateField, StateEffect, Prec } = require("@codemirror/state");
-const { EditorView, Decoration, keymap } = require("@codemirror/view");
+const { EditorView, Decoration, WidgetType, keymap } = require("@codemirror/view");
 
 // 每行：分类 ;; 名称 ;; 关键词 ;; LaTeX
 const DATA = String.raw`
@@ -1632,8 +1632,7 @@ function expandSnippet(tex, isExtra) {
       text += ch + tex[i + 1];
       i++;
     } else if (ch === "#") {
-      stops.push([text.length, text.length + 1]);
-      text += "#";
+      stops.push([text.length, text.length]);
     } else if (ch === "~") {
       exit = text.length;
     } else {
@@ -1646,6 +1645,18 @@ function expandSnippet(tex, isExtra) {
 const setSnippet = StateEffect.define();
 
 const stopMark = Decoration.mark({ class: "latex-lookup-stop" });
+
+class EmptyStopWidget extends WidgetType {
+  eq() { return true; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "latex-lookup-stop latex-lookup-stop-empty";
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
+const emptyStopMark = Decoration.widget({ widget: new EmptyStopWidget(), side: 1 });
 
 const snippetField = StateField.define({
   create: () => null,
@@ -1676,8 +1687,7 @@ const snippetField = StateField.define({
     if (!value) return Decoration.none;
     const marks = value.stops
       .slice(Math.max(value.index, 0))
-      .filter(([a, b]) => b > a)
-      .map(([a, b]) => stopMark.range(a, b));
+      .map(([a, b]) => (b > a ? stopMark.range(a, b) : emptyStopMark.range(a)));
     return Decoration.set(marks, true);
   }),
 });
