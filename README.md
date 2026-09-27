@@ -4,9 +4,7 @@ IDE-style LaTeX autocomplete for [Obsidian](https://obsidian.md). Type inside a 
 
 [中文说明](#中文说明)
 
-<!-- DEMO GIF: record a short demo, save it as docs/demo.gif, then replace this comment with:
 ![LaTeX Autofill demo](docs/demo.gif)
--->
 
 ## Why another LaTeX completer?
 
@@ -26,9 +24,7 @@ Other Obsidian plugins cover parts of this, and each has its own strengths:
 
 The comparison is based on each project's README as of September 2026. If something here is out of date, please open an issue.
 
-<!-- SCREENSHOT: save a screenshot of the completion list (for example typing 偏导数 inside $$…$$) as docs/completion.png, then replace this comment with:
 ![Completion list](docs/completion.png)
--->
 
 ## Features
 
@@ -41,9 +37,7 @@ The comparison is based on each project's README as of September 2026. If someth
 - **Search window.** Open "Search LaTeX" from the command palette or the Σ ribbon icon to browse everything. `Enter` inserts, `Shift+Enter` inserts wrapped in `$ $`, `Cmd/Ctrl+Enter` copies.
 - **Interface language.** Menus and hints are in Chinese when Obsidian's language is Chinese, and in English otherwise. Search always accepts both.
 
-<!-- SCREENSHOT: save a screenshot of the search window as docs/search.png, then replace this comment with:
 ![Search window](docs/search.png)
--->
 
 | Key | Action |
 |---|---|
@@ -95,9 +89,7 @@ The plain command list comes from [Completr](https://github.com/tth05/obsidian-c
 
 在 Obsidian 公式里打字时，像 IDE 一样在光标处弹出 LaTeX 补全。中文名、英文名或命令本身都能搜到。
 
-<!-- 演示 GIF：录好后保存为 docs/demo.gif，再把这段注释换成：
 ![LaTeX Autofill 演示](docs/demo.gif)
--->
 
 ### 和其他插件有什么不同
 
@@ -117,9 +109,7 @@ Obsidian 里还有几个插件也能做其中一部分，各有长处：
 
 以上对比依据各项目 2026 年 9 月的 README。如有过时的地方，欢迎提 issue。
 
-<!-- 截图：把补全列表的截图（比如在 $$…$$ 里打「偏导数」）保存为 docs/completion.png，再把这段注释换成：
 ![补全列表](docs/completion.png)
--->
 
 ### 怎么用
 
@@ -134,9 +124,7 @@ Obsidian 里还有几个插件也能做其中一部分，各有长处：
 - 按 `Cmd+P` 搜索「搜索 LaTeX 写法」，或点左侧 Σ 图标，可以打开完整的搜索窗口。
 - Obsidian 语言设为中文时界面显示中文，否则显示英文。搜索始终中英文都支持。
 
-<!-- 截图：把搜索窗口的截图保存为 docs/search.png，再把这段注释换成：
 ![搜索窗口](docs/search.png)
--->
 
 ### 安装
 
