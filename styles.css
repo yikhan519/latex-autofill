@@ -110,6 +110,12 @@
   font-weight: 650;
 }
 
+.latex-lookup-stop {
+  border-bottom: 1.5px dashed var(--text-accent);
+  background-color: rgba(var(--interactive-accent-rgb), 0.12);
+  border-radius: 2px;
+}
+
 .latex-lookup-cat {
   color: var(--lookup-muted);
   font-size: 12px;

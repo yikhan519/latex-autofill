@@ -6,6 +6,8 @@ const {
   Notice,
   prepareFuzzySearch,
 } = require("obsidian");
+const { StateField, StateEffect, Prec } = require("@codemirror/state");
+const { EditorView, Decoration, keymap } = require("@codemirror/view");
 
 // 每行：分类 ;; 名称 ;; 关键词 ;; LaTeX
 const DATA = String.raw`
@@ -224,6 +226,1096 @@ const GREEK_UPPER = [
   "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma", "Upsilon", "Phi", "Psi", "Omega",
 ];
 
+// Command list from Completr (MIT License, Copyright (c) 2021 tth05), https://github.com/tth05/obsidian-completr
+// `#` marks a placeholder and `~` marks where the cursor ends up.
+const COMPLETR_COMMANDS = [
+  "\\begin{align}\n~\n\\end{align}",
+  "\\begin{alignat}{#}\n\\end{alignat}",
+  "\\begin{aligned}\n~\n\\end{aligned}",
+  "\\begin{alignedat}{#}\n\\end{alignedat}",
+  "\\begin{array}{#}\n\\end{array}",
+  "\\begin{bmatrix}\n~\n\\end{bmatrix}",
+  "\\begin{Bmatrix}\n~\n\\end{Bmatrix}",
+  "\\begin{bsmallmatrix}\n~\n\\end{bsmallmatrix}",
+  "\\begin{Bsmallmatrix}\n~\n\\end{Bsmallmatrix}",
+  "\\begin{cases}\n~\n\\end{cases}",
+  "\\begin{crampedsubarray}{#}\n\\end{crampedsubarray}",
+  "\\begin{dcases}\n~\n\\end{dcases}",
+  "\\begin{drcases}\n~\n\\end{drcases}",
+  "\\begin{empheq}{#}{#}\n\\end{empheq}",
+  "\\begin{eqnarray}\n~\n\\end{eqnarray}",
+  "\\begin{equation}\n~\n\\end{equation}",
+  "\\begin{flalign}\n~\n\\end{flalign}",
+  "\\begin{gather}\n~\n\\end{gather}",
+  "\\begin{gathered}\n~\n\\end{gathered}",
+  "\\begin{lgathered}\n~\n\\end{lgathered}",
+  "\\begin{matrix}\n~\n\\end{matrix}",
+  "\\begin{multiline}\n~\n\\end{multiline}",
+  "\\begin{multilined}\n~\n\\end{multilined}",
+  "\\begin{numcases}{#}\n\\end{numcases}",
+  "\\begin{pmatrix}\n~\n\\end{pmatrix}",
+  "\\begin{prooftree}\n~\n\\end{prooftree}",
+  "\\begin{psmallmatrix}\n~\n\\end{psmallmatrix}",
+  "\\begin{rcases}\n~\n\\end{rcases}",
+  "\\begin{rgathered}\n~\n\\end{rgathered}",
+  "\\begin{smallmatrix}\n~\n\\end{smallmatrix}",
+  "\\begin{split}\n~\n\\end{split}",
+  "\\begin{spreadlines}{#}\n\\end{spreadlines}",
+  "\\begin{subarray}{#}\n\\end{subarray}",
+  "\\begin{subnumcases}{#}\n\\end{subnumcases}",
+  "\\begin{vmatrix}\n~\n\\end{vmatrix}",
+  "\\begin{Vmatrix}\n~\n\\end{Vmatrix}",
+  "\\begin{vsmallmatrix}\n~\n\\end{vsmallmatrix}",
+  "\\begin{Vsmallmatrix}\n~\n\\end{Vsmallmatrix}",
+  "\\begin{xalignat}{#}\n\\end{xalignat}",
+  "\\begin{xxalignat}{#}\n\\end{xxalignat}",
+  "\\begin{align*}\n~\n\\end{align*}",
+  "\\begin{alignat*}{#}\n\\end{alignat*}",
+  "\\begin{bmatrix*}\n~\n\\end{bmatrix*}",
+  "\\begin{Bmatrix*}\n~\n\\end{Bmatrix*}",
+  "\\begin{bsmallmatrix*}\n~\n\\end{bsmallmatrix*}",
+  "\\begin{Bsmallmatrix*}\n~\n\\end{Bsmallmatrix*}",
+  "\\begin{cases*}\n~\n\\end{cases*}",
+  "\\begin{dcases*}\n~\n\\end{dcases*}",
+  "\\begin{drcases*}\n~\n\\end{drcases*}",
+  "\\begin{eqnarray*}\n~\n\\end{eqnarray*}",
+  "\\begin{equation*}\n~\n\\end{equation*}",
+  "\\begin{flalign*}\n~\n\\end{flalign*}",
+  "\\begin{gather*}\n~\n\\end{gather*}",
+  "\\begin{matrix*}\n~\n\\end{matrix*}",
+  "\\begin{multiline*}\n~\n\\end{multiline*}",
+  "\\begin{pmatrix*}\n~\n\\end{pmatrix*}",
+  "\\begin{psmallmatrix*}\n~\n\\end{psmallmatrix*}",
+  "\\begin{rcases*}\n~\n\\end{rcases*}",
+  "\\begin{smallmatrix*}\n~\n\\end{smallmatrix*}",
+  "\\begin{vmatrix*}\n~\n\\end{vmatrix*}",
+  "\\begin{Vmatrix*}\n~\n\\end{Vmatrix*}",
+  "\\begin{vsmallmatrix*}\n~\n\\end{vsmallmatrix*}",
+  "\\begin{Vsmallmatrix*}\n~\n\\end{Vsmallmatrix*}",
+  "\\begin{xalignat*}{#}\n\\end{xalignat*}",
+  "\\above{#}{#}",
+  "\\verb|#|",
+  "\\left\\",
+  "\\right\\",
+  "\\acute{#}",
+  "\\aleph",
+  "\\alpha",
+  "\\amalg",
+  "\\And",
+  "\\angle",
+  "\\approx",
+  "\\approxeq",
+  "\\arccos",
+  "\\arcsin",
+  "\\arctan",
+  "\\arg",
+  "\\array{#}",
+  "\\arrowvert",
+  "\\Arrowvert",
+  "\\ast",
+  "\\asymp",
+  "\\atop",
+  "\\backepsilon",
+  "\\backprime",
+  "\\backsim",
+  "\\backsimeq",
+  "\\backslash",
+  "\\bar{#}",
+  "\\barwedge",
+  "\\Bbb{#}",
+  "\\Bbbk",
+  "\\bbFont",
+  "\\bbox{#}",
+  "\\bcancel{#}",
+  "\\because",
+  "\\beta",
+  "\\beth",
+  "\\between",
+  "\\bf",
+  "\\bigcap",
+  "\\bigcirc",
+  "\\bigcup",
+  "\\bigodot",
+  "\\bigoplus",
+  "\\bigotimes",
+  "\\bigsqcup",
+  "\\bigstar",
+  "\\bigtimes",
+  "\\bigtriangledown",
+  "\\bigtriangleup",
+  "\\biguplus",
+  "\\bigvee",
+  "\\bigwedge",
+  "\\binom{#}{#}",
+  "\\blacklozenge",
+  "\\blacksquare",
+  "\\blacktriangle",
+  "\\blacktriangledown",
+  "\\blacktriangleleft",
+  "\\blacktriangleright",
+  "\\bmod",
+  "\\boldsymbol{#}",
+  "\\bot",
+  "\\bowtie",
+  "\\Box",
+  "\\boxdot",
+  "\\boxed{#}",
+  "\\boxminus",
+  "\\boxplus",
+  "\\boxtimes",
+  "\\bra{#}",
+  "\\Bra{#}",
+  "\\brace",
+  "\\bracevert",
+  "\\brack",
+  "\\braket{#}",
+  "\\Braket{#}",
+  "\\breve{#}",
+  "\\bullet",
+  "\\bumpeq",
+  "\\Bumpeq",
+  "\\cal",
+  "\\cancel{#}",
+  "\\cancelto{#}{#}",
+  "\\cap",
+  "\\Cap",
+  "\\cases{#}",
+  "\\cdot",
+  "\\cdotp",
+  "\\cdots",
+  "\\celsius",
+  "\\centercolon",
+  "\\centerdot",
+  "\\centernot{#}",
+  "\\centerOver{#}{#}",
+  "\\cfrac{#}{#}",
+  "\\check{#}",
+  "\\checkmark",
+  "\\chi",
+  "\\choose",
+  "\\circ",
+  "\\circeq",
+  "\\circlearrowleft",
+  "\\circlearrowright",
+  "\\circledast",
+  "\\circledcirc",
+  "\\circleddash",
+  "\\circledR",
+  "\\circledS",
+  "\\clap{#}",
+  "\\class{#}{#}",
+  "\\clubsuit",
+  "\\colon",
+  "\\colonapprox",
+  "\\Colonapprox",
+  "\\coloneq",
+  "\\Coloneq",
+  "\\coloneqq",
+  "\\Coloneqq",
+  "\\colonsim",
+  "\\Colonsim",
+  "\\color{#}",
+  "\\colorbox{#}{#}",
+  "\\complement",
+  "\\cong",
+  "\\coprod",
+  "\\cos",
+  "\\cosh",
+  "\\cot",
+  "\\coth",
+  "\\cramped{#}",
+  "\\crampedclap{#}",
+  "\\crampedllap{#}",
+  "\\crampedrlap{#}",
+  "\\crampedsubstack{#}",
+  "\\csc",
+  "\\cssId{#}{#}",
+  "\\cup",
+  "\\Cup",
+  "\\curlyeqprec",
+  "\\curlyeqsucc",
+  "\\curlyvee",
+  "\\curlywedge",
+  "\\curvearrowleft",
+  "\\curvearrowright",
+  "\\dagger",
+  "\\daleth",
+  "\\dashleftarrow",
+  "\\dashrightarrow",
+  "\\dashv",
+  "\\dbinom{#}{#}",
+  "\\dblcolon",
+  "\\ddagger",
+  "\\ddddot{#}",
+  "\\dddot{#}",
+  "\\ddot{#}",
+  "\\ddots",
+  "\\DeclareMathOperator{#}{#}",
+  "\\DeclarePairedDelimiters{#}{#}{#}",
+  "\\DeclarePairedDelimitersX{#}{#}{#}{#}",
+  "\\DeclarePairedDelimitersXPP{#}{#}{#}{#}{#}{#}",
+  "\\deg",
+  "\\degree",
+  "\\delta",
+  "\\Delta",
+  "\\det",
+  "\\dfrac{#}{#}",
+  "\\diagdown",
+  "\\diagup",
+  "\\diamond",
+  "\\Diamond",
+  "\\diamondsuit",
+  "\\digamma",
+  "\\dim",
+  "\\displaylines{#}",
+  "\\displaystyle",
+  "\\div",
+  "\\divideontimes",
+  "\\divsymbol",
+  "\\dot{#}",
+  "\\doteq",
+  "\\Doteq",
+  "\\doteqdot",
+  "\\dotplus",
+  "\\dots",
+  "\\dotsb",
+  "\\dotsc",
+  "\\dotsi",
+  "\\dotsm",
+  "\\dotso",
+  "\\doublebarwedge",
+  "\\doublecap",
+  "\\doublecup",
+  "\\downarrow",
+  "\\Downarrow",
+  "\\downdownarrows",
+  "\\downharpoonleft",
+  "\\downharpoonright",
+  "\\ell",
+  "\\empheqbiglangle",
+  "\\empheqbiglbrace",
+  "\\empheqbiglbrack",
+  "\\empheqbiglceil",
+  "\\empheqbiglfloor",
+  "\\empheqbiglparen",
+  "\\empheqbiglvert",
+  "\\empheqbiglVert",
+  "\\empheqbigrangle",
+  "\\empheqbigrbrace",
+  "\\empheqbigrbrack",
+  "\\empheqbigrceil",
+  "\\empheqbigrfloor",
+  "\\empheqbigrparen",
+  "\\empheqbigrvert",
+  "\\empheqbigrVert",
+  "\\empheqlangle",
+  "\\empheqlbrace",
+  "\\empheqlbrack",
+  "\\empheqlceil",
+  "\\empheqlfloor",
+  "\\empheqlparen",
+  "\\empheqlvert",
+  "\\empheqlVert",
+  "\\empheqrangle",
+  "\\empheqrbrace",
+  "\\empheqrbrack",
+  "\\empheqrceil",
+  "\\empheqrfloor",
+  "\\empheqrparen",
+  "\\empheqrvert",
+  "\\empheqrVert",
+  "\\emptyset",
+  "\\enclose{#}{#}",
+  "\\enspace",
+  "\\epsilon",
+  "\\eqalign{#}",
+  "\\eqalignno{#}",
+  "\\eqcirc",
+  "\\eqcolon",
+  "\\Eqcolon",
+  "\\eqqcolon",
+  "\\Eqqcolon",
+  "\\eqref{#}",
+  "\\eqsim",
+  "\\eqslantgtr",
+  "\\eqslantless",
+  "\\equiv",
+  "\\eta",
+  "\\eth",
+  "\\exists",
+  "\\exp",
+  "\\fallingdotseq",
+  "\\fbox{#}",
+  "\\fCenter",
+  "\\fcolorbox{#}{#}{#}",
+  "\\Finv",
+  "\\flat",
+  "\\forall",
+  "\\frac{#}{#}",
+  "\\frak",
+  "\\framebox{#}",
+  "\\frown",
+  "\\Game",
+  "\\gamma",
+  "\\Gamma",
+  "\\gcd",
+  "\\ge",
+  "\\geq",
+  "\\geqq",
+  "\\geqslant",
+  "\\gets",
+  "\\gg",
+  "\\ggg",
+  "\\gggtr",
+  "\\gimel",
+  "\\gnapprox",
+  "\\gneq",
+  "\\gneqq",
+  "\\gnsim",
+  "\\grave{#}",
+  "\\gt",
+  "\\gtrapprox",
+  "\\gtrdot",
+  "\\gtreqless",
+  "\\gtreqqless",
+  "\\gtrless",
+  "\\gtrsim",
+  "\\gvertneqq",
+  "\\hat{#}",
+  "\\hbar",
+  "\\hbox{#}",
+  "\\heartsuit",
+  "\\hline",
+  "\\hom",
+  "\\hookleftarrow",
+  "\\hookrightarrow",
+  "\\hphantom{#}",
+  "\\href{#}{#}",
+  "\\hslash",
+  "\\huge",
+  "\\Huge",
+  "\\idotsint",
+  "\\iff",
+  "\\iiiint",
+  "\\iiint",
+  "\\iint",
+  "\\Im",
+  "\\imath",
+  "\\impliedby",
+  "\\implies",
+  "\\in",
+  "\\inf",
+  "\\infty",
+  "\\injlim",
+  "\\int",
+  "\\int^{#}_{#}",
+  "\\intercal",
+  "\\intop",
+  "\\iota",
+  "\\it",
+  "\\jmath",
+  "\\Join",
+  "\\kappa",
+  "\\ker",
+  "\\ket{#}",
+  "\\Ket{#}",
+  "\\ketbra{#}{#}",
+  "\\Ketbra{#}{#}",
+  "\\label{#}",
+  "\\lambda",
+  "\\Lambda",
+  "\\land",
+  "\\langle",
+  "\\large",
+  "\\Large",
+  "\\LARGE",
+  "\\LaTeX",
+  "\\lbrace",
+  "\\lbrack",
+  "\\lceil",
+  "\\ldots",
+  "\\ldotp",
+  "\\le",
+  "\\leadsto",
+  "\\Leftarrow",
+  "\\leftarrow",
+  "\\leftarrowtail",
+  "\\leftharpoondown",
+  "\\leftharpoonup",
+  "\\leftleftarrows",
+  "\\Leftrightarrow",
+  "\\leftrightarrow",
+  "\\leftrightarrows",
+  "\\leftrightharpoons",
+  "\\leftrightsquigarrow",
+  "\\leftthreetimes",
+  "\\leq",
+  "\\leqalignno{#}",
+  "\\leqq",
+  "\\leqslant",
+  "\\lessapprox",
+  "\\lessdot",
+  "\\lesseqgtr",
+  "\\lesseqqgtr",
+  "\\lessgtr",
+  "\\lesssim",
+  "\\lfloor",
+  "\\lg",
+  "\\lgroup",
+  "\\lhd",
+  "\\lim",
+  "\\lim_{#}",
+  "\\liminf",
+  "\\limsup",
+  "\\ll",
+  "\\llap{#}",
+  "\\llcorner",
+  "\\Lleftarrow",
+  "\\lll",
+  "\\llless",
+  "\\lmoustache",
+  "\\ln",
+  "\\lnapprox",
+  "\\lneq",
+  "\\lneqq",
+  "\\lnot",
+  "\\lnsim",
+  "\\log",
+  "\\longleftarrow",
+  "\\Longleftarrow",
+  "\\Longleftrightarrow",
+  "\\longleftrightarrow",
+  "\\longleftrightarrows",
+  "\\longLeftrightharpoons",
+  "\\longmapsto",
+  "\\longrightarrow",
+  "\\Longrightarrow",
+  "\\longrightleftharpoons",
+  "\\longRightleftharpoons",
+  "\\looparrowleft",
+  "\\looparrowright",
+  "\\lor",
+  "\\lozenge",
+  "\\lparen",
+  "\\lrcorner",
+  "\\Lsh",
+  "\\lt",
+  "\\ltimes",
+  "\\lvert",
+  "\\lVert",
+  "\\lvertneqq",
+  "\\maltese",
+  "\\mapsto",
+  "\\mathbb{#}",
+  "\\mathbb{R}",
+  "\\mathbb{N}",
+  "\\mathbb{C}",
+  "\\mathbb{Z}",
+  "\\mathbb{Q}",
+  "\\mathbf{#}",
+  "\\mathbfcal{#}",
+  "\\mathbffrak{#}",
+  "\\mathbfit{#}",
+  "\\mathbfscr{#}",
+  "\\mathbfsf{#}",
+  "\\mathbfsfit{#}",
+  "\\mathbfsfup{#}",
+  "\\mathbfup{#}",
+  "\\mathbin{#}",
+  "\\mathcal{#}",
+  "\\mathchoice{#}{#}{#}{#}",
+  "\\mathclap{#}",
+  "\\mathclose{#}",
+  "\\mathfrak{#}",
+  "\\mathinner{#}",
+  "\\mathit{#}",
+  "\\mathllap{#}",
+  "\\mathmakebox{#}",
+  "\\mathmbox{#}",
+  "\\mathnormal{#}",
+  "\\mathop{#}",
+  "\\mathopen{#}",
+  "\\mathord{#}",
+  "\\mathpunct{#}",
+  "\\mathrel{#}",
+  "\\mathring{#}",
+  "\\mathrlap{#}",
+  "\\mathrm{#}",
+  "\\mathscr{#}",
+  "\\mathsf{#}",
+  "\\mathsfit{#}",
+  "\\mathsfup{#}",
+  "\\mathstrut",
+  "\\mathtip{#}{#}",
+  "\\mathtt{#}",
+  "\\mathup{#}",
+  "\\max",
+  "\\mbox{#}",
+  "\\measuredangle",
+  "\\mho",
+  "\\micro",
+  "\\mid",
+  "\\min",
+  "\\mit",
+  "\\mod{#}",
+  "\\models",
+  "\\mp",
+  "\\MTThinColon",
+  "\\mu",
+  "\\multimap",
+  "\\nabla",
+  "\\natural",
+  "\\ncong",
+  "\\ndownarrow",
+  "\\ne",
+  "\\nearrow",
+  "\\neg",
+  "\\negmedspace",
+  "\\negthickspace",
+  "\\negthinspace",
+  "\\neq",
+  "\\newcommand{#}{#}",
+  "\\newenvironment{#}{#}{#}",
+  "\\newline",
+  "\\newtagform{#}{#}{#}",
+  "\\nexists",
+  "\\ngeq",
+  "\\ngeqq",
+  "\\ngeqslant",
+  "\\ngtr",
+  "\\ni",
+  "\\nleftarrow",
+  "\\nLeftarrow",
+  "\\nleftrightarrow",
+  "\\nLeftrightarrow",
+  "\\nleq",
+  "\\nleqq",
+  "\\nleqslant",
+  "\\nless",
+  "\\nmid",
+  "\\nobreakspace",
+  "\\nonscript",
+  "\\nonumber",
+  "\\normalsize",
+  "\\not",
+  "\\notag",
+  "\\notChar",
+  "\\notin",
+  "\\nparallel",
+  "\\nprec",
+  "\\npreceq",
+  "\\nrightarrow",
+  "\\nRightarrow",
+  "\\nshortmid",
+  "\\nshortparallel",
+  "\\nsim",
+  "\\nsubseteq",
+  "\\nsubseteqq",
+  "\\nsucc",
+  "\\nsucceq",
+  "\\nsupseteq",
+  "\\nsupseteqq",
+  "\\ntriangleleft",
+  "\\ntrianglelefteq",
+  "\\ntriangleright",
+  "\\ntrianglerighteq",
+  "\\nu",
+  "\\nuparrow",
+  "\\nvdash",
+  "\\nvDash",
+  "\\nVdash",
+  "\\nVDash",
+  "\\nwarrow",
+  "\\odot",
+  "\\ohm",
+  "\\oint",
+  "\\oldstyle",
+  "\\omega",
+  "\\Omega",
+  "\\omicron",
+  "\\ominus",
+  "\\operatorname{#}",
+  "\\oplus",
+  "\\ordinarycolon",
+  "\\oslash",
+  "\\otimes",
+  "\\over",
+  "\\overbrace{#}",
+  "\\overbracket{#}",
+  "\\overleftarrow{#}",
+  "\\overleftrightarrow{#}",
+  "\\overline{#}",
+  "\\overparen{#}",
+  "\\overrightarrow{#}",
+  "\\overset{#}{#}",
+  "\\overunderset{#}{#}{#}",
+  "\\owns",
+  "\\parallel",
+  "\\partial",
+  "\\perp",
+  "\\perthousand",
+  "\\phantom{#}",
+  "\\phi",
+  "\\Phi",
+  "\\pi",
+  "\\Pi",
+  "\\pitchfork",
+  "\\pm",
+  "\\pmb{#}",
+  "\\pmod{#}",
+  "\\pod{#}",
+  "\\Pr",
+  "\\prec",
+  "\\precapprox",
+  "\\preccurlyeq",
+  "\\preceq",
+  "\\precnapprox",
+  "\\precneqq",
+  "\\precnsim",
+  "\\precsim",
+  "\\prescript{#}{#}{#}",
+  "\\prime",
+  "\\prod",
+  "\\prod^{#}_{#}",
+  "\\projlim",
+  "\\propto",
+  "\\psi",
+  "\\Psi",
+  "\\qquad",
+  "\\quad",
+  "\\rangle",
+  "\\rbrace",
+  "\\rbrack",
+  "\\rceil",
+  "\\Re",
+  "\\ref{#}",
+  "\\refeq{#}",
+  "\\renewcommand{#}{#}",
+  "\\renewenvironment{#}{#}{#}",
+  "\\renewtagform{#}{#}{#}",
+  "\\restriction",
+  "\\rfloor",
+  "\\rgroup",
+  "\\rhd",
+  "\\rho",
+  "\\Rightarrow",
+  "\\rightarrow",
+  "\\rightarrowtail",
+  "\\rightharpoondown",
+  "\\rightharpoonup",
+  "\\rightleftarrows",
+  "\\rightleftharpoons",
+  "\\rightrightarrows",
+  "\\rightsquigarrow",
+  "\\rightthreetimes",
+  "\\risingdotseq",
+  "\\rlap{#}",
+  "\\rm",
+  "\\rmoustache",
+  "\\rparen",
+  "\\Rrightarrow",
+  "\\Rsh",
+  "\\rtimes",
+  "\\rvert",
+  "\\rVert",
+  "\\S",
+  "\\scr",
+  "\\scriptscriptstyle",
+  "\\scriptsize",
+  "\\scriptstyle",
+  "\\searrow",
+  "\\sec",
+  "\\set{#}",
+  "\\Set{#}",
+  "\\setminus",
+  "\\sf",
+  "\\sharp",
+  "\\shortmid",
+  "\\shortparallel",
+  "\\sideset{#}{#}{#}",
+  "\\sigma",
+  "\\Sigma",
+  "\\sim",
+  "\\simeq",
+  "\\sin",
+  "\\sinh",
+  "\\skew{#}{#}{#}",
+  "\\SkipLimits",
+  "\\small",
+  "\\smallfrown",
+  "\\smallint",
+  "\\smallsetminus",
+  "\\smallsmile",
+  "\\smash{#}",
+  "\\smile",
+  "\\space",
+  "\\spadesuit",
+  "\\sphericalangle",
+  "\\splitdfrac{#}{#}",
+  "\\splitfrac{#}{#}",
+  "\\sqcap",
+  "\\sqcup",
+  "\\sqrt{#}",
+  "\\sqsubset",
+  "\\sqsubseteq",
+  "\\sqsupset",
+  "\\sqsupseteq",
+  "\\square",
+  "\\stackbin{#}{#}",
+  "\\stackrel{#}{#}",
+  "\\star",
+  "\\strut",
+  "\\style{#}{#}",
+  "\\subset",
+  "\\Subset",
+  "\\subseteq",
+  "\\subseteqq",
+  "\\subsetneq",
+  "\\subsetneqq",
+  "\\substack{#}",
+  "\\succ",
+  "\\succapprox",
+  "\\succcurlyeq",
+  "\\succeq",
+  "\\succnapprox",
+  "\\succneqq",
+  "\\succnsim",
+  "\\succsim",
+  "\\sum",
+  "\\sum^{#}_{#}",
+  "\\sup",
+  "\\supset",
+  "\\Supset",
+  "\\supseteq",
+  "\\supseteqq",
+  "\\supsetneq",
+  "\\supsetneqq",
+  "\\surd",
+  "\\swarrow",
+  "\\symbb{#}",
+  "\\symbf{#}",
+  "\\symbfcal{#}",
+  "\\symbffrak{#}",
+  "\\symbfit{#}",
+  "\\symbfscr{#}",
+  "\\symbfsf{#}",
+  "\\symbfsfit{#}",
+  "\\symbfsfup{#}",
+  "\\symbfup{#}",
+  "\\symcal{#}",
+  "\\symfrak{#}",
+  "\\symit{#}",
+  "\\symnormal{#}",
+  "\\symrm{#}",
+  "\\symscr{#}",
+  "\\symsf{#}",
+  "\\symsfit{#}",
+  "\\symsfup{#}",
+  "\\symtt{#}",
+  "\\symup{#}",
+  "\\tag{#}",
+  "\\tan",
+  "\\tanh",
+  "\\tau",
+  "\\tbinom{#}{#}",
+  "\\TeX",
+  "\\text{#}",
+  "\\textacutedbl",
+  "\\textasciiacute",
+  "\\textasciibreve",
+  "\\textasciicaron",
+  "\\textasciicircum",
+  "\\textasciidieresis",
+  "\\textasciimacron",
+  "\\textasciitilde",
+  "\\textasteriskcentered",
+  "\\textbackslash",
+  "\\textbaht",
+  "\\textbar",
+  "\\textbardbl",
+  "\\textbf{#}",
+  "\\textbigcircle",
+  "\\textblank",
+  "\\textborn",
+  "\\textbraceleft",
+  "\\textbraceright",
+  "\\textbrokenbar",
+  "\\textbullet",
+  "\\textcelsius",
+  "\\textcent",
+  "\\textcentoldstyle",
+  "\\textcircledP",
+  "\\textclap{#}",
+  "\\textcolonmonetary",
+  "\\textcolor{#}{#}",
+  "\\textcompwordmark",
+  "\\textcopyleft",
+  "\\textcopyright",
+  "\\textcurrency",
+  "\\textdagger",
+  "\\textdaggerdbl",
+  "\\textdegree",
+  "\\textdied",
+  "\\textdiscount",
+  "\\textdiv",
+  "\\textdivorced",
+  "\\textdollar",
+  "\\textdollaroldstyle",
+  "\\textdong",
+  "\\textdownarrow",
+  "\\texteightoldstyle",
+  "\\textellipsis",
+  "\\textemdash",
+  "\\textendash",
+  "\\textestimated",
+  "\\texteuro",
+  "\\textexclamdown",
+  "\\textfiveoldstyle",
+  "\\textflorin",
+  "\\textfouroldstyle",
+  "\\textfractionsolidus",
+  "\\textgravedbl",
+  "\\textgreater",
+  "\\textguarani",
+  "\\textinterrobang",
+  "\\textinterrobangdown",
+  "\\textit{#}",
+  "\\textlangle",
+  "\\textlbrackdbl",
+  "\\textleftarrow",
+  "\\textless",
+  "\\textlira",
+  "\\textllap{#}",
+  "\\textlnot",
+  "\\textlquill",
+  "\\textmarried",
+  "\\textmho",
+  "\\textminus",
+  "\\textmu",
+  "\\textmusicalnote",
+  "\\textnaira",
+  "\\textnineoldstyle",
+  "\\textnormal{#}",
+  "\\textnumero",
+  "\\textohm",
+  "\\textonehalf",
+  "\\textoneoldstyle",
+  "\\textonequarter",
+  "\\textonesuperior",
+  "\\textopenbullet",
+  "\\textordfeminine",
+  "\\textordmasculine",
+  "\\textparagraph",
+  "\\textperiodcentered",
+  "\\textpertenthousand",
+  "\\textperthousand",
+  "\\textpeso",
+  "\\textpm",
+  "\\textquestiondown",
+  "\\textquotedblleft",
+  "\\textquotedblright",
+  "\\textquoteleft",
+  "\\textquoteright",
+  "\\textrangle",
+  "\\textrbrackdbl",
+  "\\textrecipe",
+  "\\textreferencemark",
+  "\\textregistered",
+  "\\textrightarrow",
+  "\\textrlap{#}",
+  "\\textrm{#}",
+  "\\textrquill",
+  "\\textsection",
+  "\\textservicemark",
+  "\\textsevenoldstyle",
+  "\\textsf{#}",
+  "\\textsixoldstyle",
+  "\\textsterling",
+  "\\textstyle",
+  "\\textsurd",
+  "\\textthreeoldstyle",
+  "\\textthreequarters",
+  "\\textthreesuperior",
+  "\\texttildelow",
+  "\\texttimes",
+  "\\texttip{#}{#}",
+  "\\texttrademark",
+  "\\texttt{#}",
+  "\\texttwooldstyle",
+  "\\texttwosuperior",
+  "\\textunderscore",
+  "\\textup{#}",
+  "\\textuparrow",
+  "\\textvisiblespace",
+  "\\textwon",
+  "\\textyen",
+  "\\textzerooldstyle",
+  "\\tfrac{#}{#}",
+  "\\therefore",
+  "\\theta",
+  "\\Theta",
+  "\\thickapprox",
+  "\\thicksim",
+  "\\thinspace",
+  "\\tilde{#}",
+  "\\times",
+  "\\tiny",
+  "\\Tiny",
+  "\\to",
+  "\\top",
+  "\\triangle",
+  "\\triangledown",
+  "\\triangleleft",
+  "\\trianglelefteq",
+  "\\triangleq",
+  "\\triangleright",
+  "\\trianglerighteq",
+  "\\tripledash",
+  "\\tt",
+  "\\twoheadleftarrow",
+  "\\twoheadrightarrow",
+  "\\ulcorner",
+  "\\underbrace{#}",
+  "\\underbracket{#}",
+  "\\underleftarrow{#}",
+  "\\underleftrightarrow{#}",
+  "\\underline{#}",
+  "\\underparen{#}",
+  "\\underrightarrow{#}",
+  "\\underset{#}{#}",
+  "\\unicode{#}",
+  "\\unlhd",
+  "\\unrhd",
+  "\\upalpha",
+  "\\uparrow",
+  "\\Uparrow",
+  "\\upbeta",
+  "\\upchi",
+  "\\updelta",
+  "\\Updelta",
+  "\\updownarrow",
+  "\\Updownarrow",
+  "\\upepsilon",
+  "\\upeta",
+  "\\upgamma",
+  "\\Upgamma",
+  "\\upharpoonleft",
+  "\\upharpoonright",
+  "\\upiota",
+  "\\upkappa",
+  "\\uplambda",
+  "\\Uplambda",
+  "\\uplus",
+  "\\upmu",
+  "\\upnu",
+  "\\upomega",
+  "\\Upomega",
+  "\\upomicron",
+  "\\upphi",
+  "\\Upphi",
+  "\\uppi",
+  "\\Uppi",
+  "\\uppsi",
+  "\\Uppsi",
+  "\\uprho",
+  "\\upsigma",
+  "\\Upsigma",
+  "\\upsilon",
+  "\\Upsilon",
+  "\\uptau",
+  "\\uptheta",
+  "\\Uptheta",
+  "\\upuparrows",
+  "\\upupsilon",
+  "\\Upupsilon",
+  "\\upvarepsilon",
+  "\\upvarphi",
+  "\\upvarpi",
+  "\\upvarrho",
+  "\\upvarsigma",
+  "\\upvartheta",
+  "\\upxi",
+  "\\Upxi",
+  "\\upzeta",
+  "\\urcorner",
+  "\\usetagform{#}",
+  "\\varDelta",
+  "\\varepsilon",
+  "\\varGamma",
+  "\\varinjlim",
+  "\\varkappa",
+  "\\varLambda",
+  "\\varliminf",
+  "\\varlimsup",
+  "\\varnothing",
+  "\\varOmega",
+  "\\varphi",
+  "\\varPhi",
+  "\\varpi",
+  "\\varPi",
+  "\\varprojlim",
+  "\\varpropto",
+  "\\varPsi",
+  "\\varrho",
+  "\\varsigma",
+  "\\varSigma",
+  "\\varsubsetneq",
+  "\\varsubsetneqq",
+  "\\varsupsetneq",
+  "\\varsupsetneqq",
+  "\\vartheta",
+  "\\varTheta",
+  "\\vartriangle",
+  "\\vartriangleleft",
+  "\\vartriangleright",
+  "\\varUpsilon",
+  "\\varXi",
+  "\\vcenter{#}",
+  "\\vdash",
+  "\\vDash",
+  "\\Vdash",
+  "\\vdots",
+  "\\vec{#}",
+  "\\vee",
+  "\\veebar",
+  "\\Vert",
+  "\\vert",
+  "\\vphantom{#}",
+  "\\Vvdash",
+  "\\wedge",
+  "\\widehat{#}",
+  "\\widetilde{#}",
+  "\\wp",
+  "\\wr",
+  "\\xcancel{#}",
+  "\\xhookleftarrow{#}",
+  "\\xhookrightarrow{#}",
+  "\\xi",
+  "\\Xi",
+  "\\xleftarrow{#}",
+  "\\xLeftarrow{#}",
+  "\\xleftharpoondown{#}",
+  "\\xleftharpoonup{#}",
+  "\\xleftrightarrow{#}",
+  "\\xLeftrightarrow{#}",
+  "\\xleftrightharpoons{#}",
+  "\\xLeftrightharpoons{#}",
+  "\\xlongequal{#}",
+  "\\xmapsto{#}",
+  "\\xmathstrut{#}",
+  "\\xrightarrow{#}",
+  "\\xRightarrow{#}",
+  "\\xrightharpoondown{#}",
+  "\\xrightharpoonup{#}",
+  "\\xrightleftharpoons{#}",
+  "\\xRightleftharpoons{#}",
+  "\\xtofrom{#}",
+  "\\xtwoheadleftarrow{#}",
+  "\\xtwoheadrightarrow{#}",
+  "\\yen",
+  "\\zeta",
+];
+
 function buildEntries() {
   const entries = [];
   for (const line of DATA.split("\n")) {
@@ -239,6 +1331,14 @@ function buildEntries() {
   for (const cmd of GREEK_UPPER) {
     const cn = cnByCmd[cmd.toLowerCase()] || "";
     entries.push({ cat: "希腊字母", name: `大写${cn} ${cmd}`, en: "", keys: "greek 希腊 大写 uppercase", tex: `\\${cmd}` });
+  }
+  const known = new Set(entries.map((e) => e.tex));
+  for (const tex of COMPLETR_COMMANDS) {
+    const cmd = tex.match(/^\\(?:begin\{[^}]+\}|[A-Za-z]+\*?|.)/);
+    const name = cmd ? cmd[0] : tex;
+    if (known.has(tex) || known.has(name)) continue;
+    known.add(tex);
+    entries.push({ cat: "命令", name, en: "", keys: name.replace(/^\\/, ""), tex, extra: true });
   }
   for (const e of entries) {
     if (e.en === undefined) {
@@ -298,14 +1398,15 @@ function appendHighlighted(parent, text, query) {
   if (cursor < text.length) parent.appendText(text.slice(cursor));
 }
 
-function search(query, allowFuzzy = true) {
+function search(query, allowFuzzy = true, includeExtra = true) {
   const q = query.trim().toLowerCase();
-  if (!q) return ENTRIES;
+  const pool = includeExtra ? ENTRIES : ENTRIES.filter((e) => !e.extra);
+  if (!q) return pool;
 
   const terms = q.split(/\s+/);
   const scored = [];
-  for (const e of ENTRIES) {
-    let score = 0;
+  for (const e of pool) {
+    let score = e.extra ? -12 : 0;
     let ok = true;
     for (const term of terms) {
       const idx = e.hay.indexOf(term);
@@ -316,12 +1417,13 @@ function search(query, allowFuzzy = true) {
       if (e.texLc.startsWith(term) || e.texLc.startsWith("\\" + term)) score += 15;
       else score -= idx * 0.01;
     }
+    if (ok && e.tex.startsWith("\\" + query.trim())) score += 8;
     if (ok) scored.push({ e, score: score - e.tex.length * 0.001 });
   }
 
   if (scored.length === 0 && allowFuzzy) {
     const fuzzy = prepareFuzzySearch(q);
-    for (const e of ENTRIES) {
+    for (const e of pool) {
       const r = fuzzy(e.hay);
       if (r) scored.push({ e, score: r.score });
     }
@@ -345,11 +1447,13 @@ function renderRow(entry, el, query) {
   }
   main.createSpan({ cls: "latex-lookup-cat", text: entry.cat });
 
-  const code = el.createEl("code", { cls: "latex-lookup-code" });
-  appendHighlighted(code, entry.tex, query);
+  if (entry.tex !== entry.name) {
+    const code = el.createEl("code", { cls: "latex-lookup-code" });
+    appendHighlighted(code, entry.tex.replace(/\s*\n\s*/g, " "), query);
+  }
 }
 
-function isInMath(text) {
+function mathMode(text) {
   let inFence = false;
   let inCode = false;
   let inline = false;
@@ -375,22 +1479,249 @@ function isInMath(text) {
       inline = !inline;
     }
   }
-  return inline || display;
+  if (display) return "display";
+  return inline ? "inline" : null;
 }
 
-function firstArgumentRange(tex) {
-  for (let i = 0; i < tex.length; i++) {
+function mathModeAt(editor, pos = editor.getCursor("from")) {
+  return mathMode(editor.getRange({ line: 0, ch: 0 }, pos));
+}
+
+function matchBrace(tex, open) {
+  let depth = 0;
+  for (let i = open; i < tex.length; i++) {
     if (tex[i] === "\\") { i++; continue; }
-    if (tex[i] !== "{") continue;
-    let depth = 1;
-    for (let j = i + 1; j < tex.length; j++) {
-      if (tex[j] === "\\") { j++; continue; }
-      if (tex[j] === "{") depth++;
-      else if (tex[j] === "}" && --depth === 0) return j > i + 1 ? [i + 1, j] : null;
-    }
-    return null;
+    if (tex[i] === "{") depth++;
+    else if (tex[i] === "}" && --depth === 0) return i;
   }
-  return null;
+  return -1;
+}
+
+function findEnvEnd(tex, name, from) {
+  const open = `\\begin{${name}}`;
+  const close = `\\end{${name}}`;
+  let depth = 1;
+  for (let i = from; i < tex.length; i++) {
+    if (tex.startsWith(open, i)) depth++;
+    else if (tex.startsWith(close, i) && --depth === 0) return i;
+  }
+  return -1;
+}
+
+function pushTrimmed(tex, from, to, stops) {
+  while (from < to && /\s/.test(tex[from])) from++;
+  while (to > from && /\s/.test(tex[to - 1])) to--;
+  if (to > from) stops.push([from, to]);
+}
+
+function addCells(tex, from, to, stops) {
+  let cell = from;
+  let depth = 0;
+  for (let i = from; i < to; i++) {
+    if (tex.startsWith("\\begin{", i)) {
+      const nameEnd = tex.indexOf("}", i + 7);
+      const close = nameEnd < 0 ? -1 : findEnvEnd(tex, tex.slice(i + 7, nameEnd), nameEnd + 1);
+      if (close >= 0) {
+        i = close + (nameEnd - i - 7) + 5;
+        continue;
+      }
+    }
+    const ch = tex[i];
+    if (ch === "\\") {
+      if (tex[i + 1] === "\\" && depth === 0) {
+        pushTrimmed(tex, cell, i, stops);
+        cell = i + 2;
+      }
+      i++;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+    } else if (ch === "&" && depth === 0) {
+      pushTrimmed(tex, cell, i, stops);
+      cell = i + 1;
+    }
+  }
+  pushTrimmed(tex, cell, to, stops);
+}
+
+function deriveStops(tex) {
+  const stops = [];
+  let i = 0;
+  while (i < tex.length) {
+    if (tex.startsWith("\\begin{", i)) {
+      const nameEnd = tex.indexOf("}", i + 7);
+      const name = tex.slice(i + 7, nameEnd);
+      const close = nameEnd < 0 ? -1 : findEnvEnd(tex, name, nameEnd + 1);
+      if (close < 0) { i += 7; continue; }
+      let body = nameEnd + 1;
+      while (tex[body] === "{") {
+        const end = matchBrace(tex, body);
+        if (end < 0) break;
+        if (end > body + 1) stops.push([body + 1, end]);
+        body = end + 1;
+      }
+      addCells(tex, body, close, stops);
+      i = close + name.length + 6;
+    } else if (tex.startsWith("\\sqrt[", i)) {
+      const end = tex.indexOf("]", i + 6);
+      if (end > i + 6) stops.push([i + 6, end]);
+      i = end < 0 ? i + 6 : end + 1;
+    } else if (tex[i] === "\\") {
+      i += 2;
+    } else if (tex[i] === "{") {
+      const end = matchBrace(tex, i);
+      if (end < 0) { i++; continue; }
+      if (end > i + 1) stops.push([i + 1, end]);
+      i = end + 1;
+    } else {
+      i++;
+    }
+  }
+  return stops.sort((a, b) => a[0] - b[0]);
+}
+
+function expandSnippet(tex, isExtra) {
+  if (!isExtra) return { text: tex, stops: deriveStops(tex), exit: tex.length };
+
+  let text = "";
+  const stops = [];
+  let exit = null;
+  for (let i = 0; i < tex.length; i++) {
+    const ch = tex[i];
+    if (ch === "\\" && i + 1 < tex.length) {
+      text += ch + tex[i + 1];
+      i++;
+    } else if (ch === "#") {
+      stops.push([text.length, text.length + 1]);
+      text += "#";
+    } else if (ch === "~") {
+      exit = text.length;
+    } else {
+      text += ch;
+    }
+  }
+  return { text, stops, exit: exit === null ? text.length : exit };
+}
+
+const setSnippet = StateEffect.define();
+
+const stopMark = Decoration.mark({ class: "latex-lookup-stop" });
+
+const snippetField = StateField.define({
+  create: () => null,
+  update(value, tr) {
+    if (value && tr.docChanged) {
+      let outside = false;
+      tr.changes.iterChangedRanges((fromA, toA) => {
+        if (fromA < value.start || toA > value.end) outside = true;
+      });
+      value = outside ? null : {
+        stops: value.stops.map(([a, b]) => [tr.changes.mapPos(a, -1), tr.changes.mapPos(b, 1)]),
+        index: value.index,
+        start: tr.changes.mapPos(value.start, -1),
+        end: tr.changes.mapPos(value.end, 1),
+        exit: tr.changes.mapPos(value.exit, 1),
+      };
+    }
+    for (const effect of tr.effects) {
+      if (effect.is(setSnippet)) value = effect.value;
+    }
+    if (value && tr.selection) {
+      const head = tr.state.selection.main.head;
+      if (head < value.start || head > value.end) value = null;
+    }
+    return value;
+  },
+  provide: (field) => EditorView.decorations.from(field, (value) => {
+    if (!value) return Decoration.none;
+    const marks = value.stops
+      .slice(Math.max(value.index, 0))
+      .filter(([a, b]) => b > a)
+      .map(([a, b]) => stopMark.range(a, b));
+    return Decoration.set(marks, true);
+  }),
+});
+
+function jumpToStop(view, direction) {
+  const value = view.state.field(snippetField, false);
+  if (!value) return false;
+  const next = value.index + direction;
+  if (next < 0) return true;
+  if (next >= value.stops.length) {
+    view.dispatch({ selection: { anchor: value.exit }, effects: setSnippet.of(null), scrollIntoView: true });
+    return true;
+  }
+  const [a, b] = value.stops[next];
+  view.dispatch({
+    selection: { anchor: a, head: b },
+    effects: setSnippet.of({ ...value, index: next }),
+    scrollIntoView: true,
+  });
+  return true;
+}
+
+const snippetKeymap = Prec.highest(keymap.of([
+  { key: "Tab", run: (view) => jumpToStop(view, 1) },
+  { key: "Shift-Tab", run: (view) => jumpToStop(view, -1) },
+  {
+    key: "Escape",
+    run: (view) => {
+      if (view.state.field(snippetField, false)) view.dispatch({ effects: setSnippet.of(null) });
+      return false;
+    },
+  },
+]));
+
+function insertSnippet(editor, from, to, entry, mode) {
+  const source = mode === "display" ? entry.tex : entry.tex.replace(/\s*\n\s*/g, " ");
+  const { text, stops, exit } = expandSnippet(source, entry.extra);
+  const prefix = mode ? "" : "$";
+  const insert = `${prefix}${text}${prefix}`;
+  const fromOffset = editor.posToOffset(from);
+  const toOffset = editor.posToOffset(to);
+  const base = fromOffset + prefix.length;
+  const absolute = stops.map(([a, b]) => [base + a, base + b]);
+  const exitOffset = base + exit;
+
+  const view = editor.cm;
+  const previous = view ? view.state.field(snippetField, false) : undefined;
+  if (previous === undefined) {
+    editor.replaceRange(insert, from, to);
+    if (absolute.length) editor.setSelection(editor.offsetToPos(absolute[0][0]), editor.offsetToPos(absolute[0][1]));
+    else editor.setCursor(editor.offsetToPos(exitOffset));
+    return;
+  }
+
+  let snippet = absolute.length
+    ? { stops: absolute, index: 0, start: base, end: base + text.length, exit: exitOffset }
+    : null;
+  if (previous && fromOffset >= previous.start && toOffset <= previous.end) {
+    const changes = view.state.changes({ from: fromOffset, to: toOffset, insert });
+    const rest = previous.stops
+      .slice(previous.index + 1)
+      .map(([a, b]) => [changes.mapPos(a, -1), changes.mapPos(b, 1)]);
+    if (absolute.length || rest.length) {
+      snippet = {
+        stops: [...absolute, ...rest],
+        index: absolute.length ? 0 : -1,
+        start: changes.mapPos(previous.start, -1),
+        end: changes.mapPos(previous.end, 1),
+        exit: changes.mapPos(previous.exit, 1),
+      };
+    }
+  }
+
+  view.dispatch({
+    changes: { from: fromOffset, to: toOffset, insert },
+    selection: absolute.length ? { anchor: absolute[0][0], head: absolute[0][1] } : { anchor: exitOffset },
+    effects: setSnippet.of(snippet),
+    scrollIntoView: true,
+  });
+}
+
+function plainText(entry) {
+  return entry.extra ? entry.tex.replace(/[#~]/g, "") : entry.tex;
 }
 
 const HAN = "\\u3400-\\u9fff";
@@ -418,21 +1749,21 @@ class LatexAutocomplete extends EditorSuggest {
 
   onTrigger(cursor, editor) {
     const before = editor.getLine(cursor.line).slice(0, cursor.ch);
-    const inMath = isInMath(editor.getRange({ line: 0, ch: 0 }, cursor));
+    const mode = mathModeAt(editor, cursor);
 
     let match = before.match(BACKSLASH_TRIGGER);
     let start;
     if (match) {
       start = cursor.ch - match[0].length;
       this.fromBackslash = true;
-    } else if (inMath && (match = before.match(WORD_TRIGGER))) {
+    } else if (mode && (match = before.match(WORD_TRIGGER))) {
       start = cursor.ch - match[1].length;
       this.fromBackslash = false;
     } else {
       return null;
     }
 
-    this.inMath = inMath;
+    this.mathMode = mode;
     return {
       start: { line: cursor.line, ch: start },
       end: cursor,
@@ -441,7 +1772,7 @@ class LatexAutocomplete extends EditorSuggest {
   }
 
   getSuggestions(context) {
-    return search(context.query, this.fromBackslash).slice(0, this.limit);
+    return search(context.query, this.fromBackslash, this.fromBackslash).slice(0, this.limit);
   }
 
   renderSuggestion(entry, el) {
@@ -451,19 +1782,8 @@ class LatexAutocomplete extends EditorSuggest {
   selectSuggestion(entry) {
     const context = this.context;
     if (!context) return;
-    const { editor, start, end } = context;
-    const prefix = this.inMath ? "" : "$";
-    const text = `${prefix}${entry.tex}${prefix}`;
-    editor.replaceRange(text, start, end);
-
-    const offset = editor.posToOffset(start) + prefix.length;
-    const arg = firstArgumentRange(entry.tex);
-    if (arg) {
-      editor.setSelection(editor.offsetToPos(offset + arg[0]), editor.offsetToPos(offset + arg[1]));
-    } else {
-      editor.setCursor(editor.offsetToPos(offset + entry.tex.length));
-    }
     this.close();
+    insertSnippet(context.editor, context.start, context.end, entry, this.mathMode);
   }
 }
 
@@ -494,23 +1814,42 @@ class LatexLookupModal extends SuggestModal {
 
   onChooseSuggestion(entry, evt) {
     const wrap = evt && evt.shiftKey;
-    const text = wrap ? `$${entry.tex}$` : entry.tex;
     const copyOnly = (evt && (evt.metaKey || evt.ctrlKey)) || !this.editor;
 
     if (copyOnly) {
+      const text = wrap ? `$${plainText(entry)}$` : plainText(entry);
       navigator.clipboard.writeText(text).then(
         () => new Notice(`已复制：${text}`),
         () => new Notice("复制失败"),
       );
       return;
     }
-    this.editor.replaceSelection(text);
+    const editor = this.editor;
+    const from = editor.getCursor("from");
+    const mode = wrap ? null : mathModeAt(editor, from) || "display";
+    insertSnippet(editor, from, editor.getCursor("to"), entry, mode);
   }
 }
 
 module.exports = class LatexLookupPlugin extends Plugin {
   async onload() {
-    this.registerEditorSuggest(new LatexAutocomplete(this.app));
+    this.registerEditorExtension([snippetField, snippetKeymap]);
+    const suggest = new LatexAutocomplete(this.app);
+    this.registerEditorSuggest(suggest);
+
+    // LaTeX Suite's tabout also binds Tab at the highest precedence and loads first,
+    // so placeholder jumps are intercepted before the event reaches CodeMirror.
+    this.registerDomEvent(document, "keydown", (evt) => {
+      if (evt.key !== "Tab" || evt.ctrlKey || evt.metaKey || evt.altKey || evt.isComposing) return;
+      if (suggest.isOpen) return;
+      const target = evt.target instanceof Element ? evt.target.closest(".cm-editor") : null;
+      const view = target ? EditorView.findFromDOM(target) : null;
+      if (!view || !view.state.field(snippetField, false)) return;
+      if (jumpToStop(view, evt.shiftKey ? -1 : 1)) {
+        evt.preventDefault();
+        evt.stopImmediatePropagation();
+      }
+    }, { capture: true });
 
     const open = () => {
       const view = this.app.workspace.getActiveViewOfType(MarkdownView);
