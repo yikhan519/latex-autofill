@@ -1454,40 +1454,94 @@ function renderRow(entry, el, query) {
   }
 }
 
-function mathContext(text) {
-  let inFence = false;
-  let inCode = false;
-  let inline = false;
-  let display = false;
-  let start = -1;
+const FENCE = / {0,3}(`{3,}|~{3,})/y;
+const INITIAL_SCAN = { fence: null, code: false, inline: false, display: false, start: -1 };
+
+// Scans `text`, which must begin at a line start at document offset `base`, from `state`.
+// `onLineStart(offset, state)` receives the state before each later line; that state only
+// depends on the document up to and including `offset`.
+function scanMath(text, base, state, onLineStart) {
+  let { fence, code, inline, display, start } = state;
   for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const atLineStart = i === 0 || text[i - 1] === "\n";
-    if (atLineStart && text.startsWith("```", i) && !inline && !display) {
-      inFence = !inFence;
-      i += 2;
-      continue;
+    if (i === 0 || text[i - 1] === "\n") {
+      if (onLineStart && i > 0) onLineStart(base + i, { fence, code, inline, display, start });
+      if (!inline && !display) {
+        FENCE.lastIndex = i;
+        const m = FENCE.exec(text);
+        if (m && (!fence || (m[1][0] === fence[0] && m[1].length >= fence.length))) {
+          fence = fence ? null : m[1];
+          const eol = text.indexOf("\n", i);
+          if (eol < 0) break;
+          i = eol - 1;
+          continue;
+        }
+      }
     }
-    if (inFence) continue;
+    if (fence) continue;
+    const ch = text[i];
     if (ch === "\\") { i++; continue; }
-    if (ch === "`" && !inline && !display) { inCode = !inCode; continue; }
-    if (inCode) continue;
-    if (ch === "\n" && text[i + 1] === "\n") inline = false;
+    if (ch === "\n" && text[i + 1] === "\n") { inline = false; code = false; }
+    if (ch === "`" && !inline && !display) { code = !code; continue; }
+    if (code) continue;
     if (ch !== "$") continue;
     if (text[i + 1] === "$" && !inline) {
       display = !display;
-      start = i + 2;
+      start = base + i + 2;
       i++;
     } else if (!display) {
       inline = !inline;
-      start = i + 1;
+      start = base + i + 1;
     }
   }
-  const mode = display ? "display" : inline ? "inline" : null;
-  return { mode, start: mode ? start : -1 };
+  return { fence, code, inline, display, start };
+}
+
+function toContext(state) {
+  const mode = state.display ? "display" : state.inline ? "inline" : null;
+  return { mode, start: mode ? state.start : -1 };
+}
+
+function mathContext(text) {
+  return toContext(scanMath(text, 0, INITIAL_SCAN));
+}
+
+const CHECKPOINT_SPACING = 2048;
+
+// Scanner states at line starts, so a lookup only rescans from the nearest checkpoint.
+const scanCache = StateField.define({
+  create: () => ({ points: [] }),
+  update(value, tr) {
+    if (!tr.docChanged) return value;
+    let changed = Infinity;
+    tr.changes.iterChangedRanges((fromA) => { changed = Math.min(changed, fromA); });
+    return { points: value.points.filter((p) => p.offset < changed) };
+  },
+});
+
+function cachedContext(state, offset) {
+  const points = state.field(scanCache).points;
+  let lo = 0;
+  let hi = points.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].offset <= offset) lo = mid + 1;
+    else hi = mid;
+  }
+  const from = lo > 0 ? points[lo - 1] : { offset: 0, state: INITIAL_SCAN };
+  const record = lo === points.length
+    ? (at, s) => {
+      const last = points.length ? points[points.length - 1].offset : 0;
+      if (at - last >= CHECKPOINT_SPACING) points.push({ offset: at, state: s });
+    }
+    : null;
+  return toContext(scanMath(state.doc.sliceString(from.offset, offset), from.offset, from.state, record));
 }
 
 function mathContextAt(editor, pos = editor.getCursor("from")) {
+  const view = editor.cm;
+  if (view && view.state && view.state.field(scanCache, false)) {
+    return cachedContext(view.state, editor.posToOffset(pos));
+  }
   return mathContext(editor.getRange({ line: 0, ch: 0 }, pos));
 }
 
@@ -1928,7 +1982,7 @@ class LatexLookupModal extends SuggestModal {
 module.exports = class LatexLookupPlugin extends Plugin {
   async onload() {
     S = STRINGS[uiLanguage()];
-    this.registerEditorExtension([snippetField, snippetKeymap]);
+    this.registerEditorExtension([snippetField, snippetKeymap, scanCache]);
     const suggest = new LatexAutocomplete(this.app);
     this.registerEditorSuggest(suggest);
 
