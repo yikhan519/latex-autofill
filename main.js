@@ -5,9 +5,10 @@ const {
   MarkdownView,
   Notice,
   prepareFuzzySearch,
+  moment,
 } = require("obsidian");
 const { StateField, StateEffect, Prec } = require("@codemirror/state");
-const { EditorView, Decoration, keymap } = require("@codemirror/view");
+const { EditorView, Decoration, WidgetType, keymap } = require("@codemirror/view");
 
 // 每行：分类 ;; 名称 ;; 关键词 ;; LaTeX
 const DATA = String.raw`
@@ -227,6 +228,7 @@ const GREEK_UPPER = [
 ];
 
 // Command list from Completr (MIT License, Copyright (c) 2021 tth05), https://github.com/tth05/obsidian-completr
+// The full license text is in THIRD_PARTY_LICENSES.
 // `#` marks a placeholder and `~` marks where the cursor ends up.
 const COMPLETR_COMMANDS = [
   "\\begin{align}\n~\n\\end{align}",
@@ -1453,38 +1455,130 @@ function renderRow(entry, el, query) {
   }
 }
 
-function mathMode(text) {
-  let inFence = false;
-  let inCode = false;
-  let inline = false;
-  let display = false;
+const FENCE = / {0,3}(`{3,}|~{3,})/y;
+const INITIAL_SCAN = { fence: null, code: false, inline: false, display: false, start: -1 };
+
+// Scans `text`, which must begin at a line start at document offset `base`, from `state`.
+// `onLineStart(offset, state)` receives the state before each later line; that state only
+// depends on the document up to and including `offset`.
+function scanMath(text, base, state, onLineStart) {
+  let { fence, code, inline, display, start } = state;
   for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const atLineStart = i === 0 || text[i - 1] === "\n";
-    if (atLineStart && text.startsWith("```", i) && !inline && !display) {
-      inFence = !inFence;
-      i += 2;
-      continue;
+    if (i === 0 || text[i - 1] === "\n") {
+      if (onLineStart && i > 0) onLineStart(base + i, { fence, code, inline, display, start });
+      if (!inline && !display) {
+        FENCE.lastIndex = i;
+        const m = FENCE.exec(text);
+        if (m && (!fence || (m[1][0] === fence[0] && m[1].length >= fence.length))) {
+          fence = fence ? null : m[1];
+          const eol = text.indexOf("\n", i);
+          if (eol < 0) break;
+          i = eol - 1;
+          continue;
+        }
+      }
     }
-    if (inFence) continue;
+    if (fence) continue;
+    const ch = text[i];
     if (ch === "\\") { i++; continue; }
-    if (ch === "`" && !inline && !display) { inCode = !inCode; continue; }
-    if (inCode) continue;
-    if (ch === "\n" && text[i + 1] === "\n") inline = false;
+    if (ch === "\n" && text[i + 1] === "\n") { inline = false; code = false; }
+    if (ch === "`" && !inline && !display) { code = !code; continue; }
+    if (code) continue;
     if (ch !== "$") continue;
     if (text[i + 1] === "$" && !inline) {
       display = !display;
+      start = base + i + 2;
       i++;
     } else if (!display) {
       inline = !inline;
+      start = base + i + 1;
     }
   }
-  if (display) return "display";
-  return inline ? "inline" : null;
+  return { fence, code, inline, display, start };
 }
 
-function mathModeAt(editor, pos = editor.getCursor("from")) {
-  return mathMode(editor.getRange({ line: 0, ch: 0 }, pos));
+function toContext(state) {
+  const mode = state.display ? "display" : state.inline ? "inline" : null;
+  return { mode, start: mode ? state.start : -1 };
+}
+
+function mathContext(text) {
+  return toContext(scanMath(text, 0, INITIAL_SCAN));
+}
+
+const CHECKPOINT_SPACING = 2048;
+
+// Scanner states at line starts, so a lookup only rescans from the nearest checkpoint.
+const scanCache = StateField.define({
+  create: () => ({ points: [] }),
+  update(value, tr) {
+    if (!tr.docChanged) return value;
+    let changed = Infinity;
+    tr.changes.iterChangedRanges((fromA) => { changed = Math.min(changed, fromA); });
+    return { points: value.points.filter((p) => p.offset < changed) };
+  },
+});
+
+function cachedContext(state, offset) {
+  const points = state.field(scanCache).points;
+  let lo = 0;
+  let hi = points.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].offset <= offset) lo = mid + 1;
+    else hi = mid;
+  }
+  const from = lo > 0 ? points[lo - 1] : { offset: 0, state: INITIAL_SCAN };
+  const record = lo === points.length
+    ? (at, s) => {
+      const last = points.length ? points[points.length - 1].offset : 0;
+      if (at - last >= CHECKPOINT_SPACING) points.push({ offset: at, state: s });
+    }
+    : null;
+  return toContext(scanMath(state.doc.sliceString(from.offset, offset), from.offset, from.state, record));
+}
+
+function mathContextAt(editor, pos = editor.getCursor("from")) {
+  const view = editor.cm;
+  if (view && view.state && view.state.field(scanCache, false)) {
+    return cachedContext(view.state, editor.posToOffset(pos));
+  }
+  return mathContext(editor.getRange({ line: 0, ch: 0 }, pos));
+}
+
+function mathModeAt(editor, pos) {
+  return mathContextAt(editor, pos).mode;
+}
+
+// Commands whose braced argument is typeset as text, where ordinary words are expected.
+const TEXT_COMMANDS = new Set([
+  "text", "textrm", "textbf", "textit", "textsf", "texttt", "textup", "textmd",
+  "textnormal", "textsl", "textsc", "emph", "mbox", "hbox", "fbox",
+  "operatorname", "operatorname*", "tag", "tag*", "intertext",
+]);
+const COMMAND_NAME = /[A-Za-z]+\*?/y;
+
+function inTextMode(math) {
+  const stack = [];
+  let pending = false;
+  for (let i = 0; i < math.length; i++) {
+    const ch = math[i];
+    if (ch === "\\") {
+      COMMAND_NAME.lastIndex = i + 1;
+      const m = COMMAND_NAME.exec(math);
+      pending = !!m && TEXT_COMMANDS.has(m[0]);
+      i += m ? m[0].length : 1;
+    } else if (ch === "{") {
+      stack.push(pending || (stack.length > 0 && stack[stack.length - 1]));
+      pending = false;
+    } else if (ch === "}") {
+      stack.pop();
+      pending = false;
+    } else if (!/\s/.test(ch)) {
+      pending = false;
+    }
+  }
+  return stack.length > 0 && stack[stack.length - 1];
 }
 
 function matchBrace(tex, open) {
@@ -1593,8 +1687,7 @@ function expandSnippet(tex, isExtra) {
       text += ch + tex[i + 1];
       i++;
     } else if (ch === "#") {
-      stops.push([text.length, text.length + 1]);
-      text += "#";
+      stops.push([text.length, text.length]);
     } else if (ch === "~") {
       exit = text.length;
     } else {
@@ -1607,6 +1700,18 @@ function expandSnippet(tex, isExtra) {
 const setSnippet = StateEffect.define();
 
 const stopMark = Decoration.mark({ class: "latex-lookup-stop" });
+
+class EmptyStopWidget extends WidgetType {
+  eq() { return true; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "latex-lookup-stop latex-lookup-stop-empty";
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
+const emptyStopMark = Decoration.widget({ widget: new EmptyStopWidget(), side: 1 });
 
 const snippetField = StateField.define({
   create: () => null,
@@ -1637,8 +1742,7 @@ const snippetField = StateField.define({
     if (!value) return Decoration.none;
     const marks = value.stops
       .slice(Math.max(value.index, 0))
-      .filter(([a, b]) => b > a)
-      .map(([a, b]) => stopMark.range(a, b));
+      .map(([a, b]) => (b > a ? stopMark.range(a, b) : emptyStopMark.range(a)));
     return Decoration.set(marks, true);
   }),
 });
@@ -1724,6 +1828,47 @@ function plainText(entry) {
   return entry.extra ? entry.tex.replace(/[#~]/g, "") : entry.tex;
 }
 
+const STRINGS = {
+  en: {
+    search: "Search LaTeX",
+    placeholder: "Search LaTeX, e.g. sum, integral, matrix, alpha, 求和",
+    insert: "insert",
+    select: "select",
+    close: "close",
+    copy: "copy",
+    insertWrapped: "insert wrapped in $ $",
+    copyWrapped: "copy wrapped in $ $",
+    copied: "Copied: ",
+    copyFailed: "Copy failed",
+  },
+  zh: {
+    search: "搜索 LaTeX 写法",
+    placeholder: "搜索 LaTeX 写法，例如：求和、积分、矩阵、alpha",
+    insert: "插入",
+    select: "选择",
+    close: "关闭",
+    copy: "复制",
+    insertWrapped: "插入并用 $ $ 包裹",
+    copyWrapped: "复制（带 $ $）",
+    copied: "已复制：",
+    copyFailed: "复制失败",
+  },
+};
+
+// Obsidian stores the interface language in localStorage only when it isn't English.
+function uiLanguage() {
+  let lang = null;
+  try {
+    lang = window.localStorage.getItem("language");
+  } catch (e) {
+    lang = null;
+  }
+  if (!lang && moment) lang = moment.locale();
+  return /^zh/i.test(lang || "") ? "zh" : "en";
+}
+
+let S = STRINGS.en;
+
 const HAN = "\\u3400-\\u9fff";
 const BACKSLASH_TRIGGER = new RegExp(`\\\\([A-Za-z${HAN}]+)$`);
 const WORD_TRIGGER = new RegExp(`(?:^|[^A-Za-z${HAN}\\\\])([${HAN}]+|[A-Za-z]{3,})$`);
@@ -1734,9 +1879,9 @@ class LatexAutocomplete extends EditorSuggest {
     this.limit = 20;
     if (this.suggestEl) this.suggestEl.addClass("latex-lookup-suggest");
     this.setInstructions([
-      { command: "↵ / Tab", purpose: "插入" },
-      { command: "↑↓", purpose: "选择" },
-      { command: "esc", purpose: "关闭" },
+      { command: "↵ / Tab", purpose: S.insert },
+      { command: "↑↓", purpose: S.select },
+      { command: "esc", purpose: S.close },
     ]);
     this.scope.register([], "Tab", (evt) => {
       if (this.suggestions && this.suggestions.useSelectedItem) {
@@ -1749,14 +1894,18 @@ class LatexAutocomplete extends EditorSuggest {
 
   onTrigger(cursor, editor) {
     const before = editor.getLine(cursor.line).slice(0, cursor.ch);
-    const mode = mathModeAt(editor, cursor);
+    const { mode, start: mathStart } = mathContextAt(editor, cursor);
 
     let match = before.match(BACKSLASH_TRIGGER);
     let start;
     if (match) {
       start = cursor.ch - match[0].length;
       this.fromBackslash = true;
-    } else if (mode && (match = before.match(WORD_TRIGGER))) {
+    } else if (
+      mode
+      && (match = before.match(WORD_TRIGGER))
+      && !inTextMode(editor.getRange(editor.offsetToPos(mathStart), cursor))
+    ) {
       start = cursor.ch - match[1].length;
       this.fromBackslash = false;
     } else {
@@ -1793,12 +1942,12 @@ class LatexLookupModal extends SuggestModal {
     this.editor = editor;
     this.limit = 60;
     this.modalEl.addClass("latex-lookup-modal");
-    this.setPlaceholder("搜索 LaTeX 写法，例如：求和、积分、矩阵、alpha");
+    this.setPlaceholder(S.placeholder);
     this.setInstructions([
-      { command: "↵", purpose: editor ? "插入" : "复制" },
-      { command: "Shift ↵", purpose: editor ? "插入并用 $ $ 包裹" : "复制（带 $ $）" },
-      { command: "Mod ↵", purpose: "复制" },
-      { command: "esc", purpose: "关闭" },
+      { command: "↵", purpose: editor ? S.insert : S.copy },
+      { command: "Shift ↵", purpose: editor ? S.insertWrapped : S.copyWrapped },
+      { command: "Mod ↵", purpose: S.copy },
+      { command: "esc", purpose: S.close },
     ]);
     this.scope.register(["Shift"], "Enter", (evt) => { this.selectActiveSuggestion(evt); return false; });
     this.scope.register(["Mod"], "Enter", (evt) => { this.selectActiveSuggestion(evt); return false; });
@@ -1819,8 +1968,8 @@ class LatexLookupModal extends SuggestModal {
     if (copyOnly) {
       const text = wrap ? `$${plainText(entry)}$` : plainText(entry);
       navigator.clipboard.writeText(text).then(
-        () => new Notice(`已复制：${text}`),
-        () => new Notice("复制失败"),
+        () => new Notice(`${S.copied}${text}`),
+        () => new Notice(S.copyFailed),
       );
       return;
     }
@@ -1833,7 +1982,8 @@ class LatexLookupModal extends SuggestModal {
 
 module.exports = class LatexLookupPlugin extends Plugin {
   async onload() {
-    this.registerEditorExtension([snippetField, snippetKeymap]);
+    S = STRINGS[uiLanguage()];
+    this.registerEditorExtension([snippetField, snippetKeymap, scanCache]);
     const suggest = new LatexAutocomplete(this.app);
     this.registerEditorSuggest(suggest);
 
@@ -1857,10 +2007,10 @@ module.exports = class LatexLookupPlugin extends Plugin {
       new LatexLookupModal(this.app, editor).open();
     };
 
-    this.addRibbonIcon("sigma", "搜索 LaTeX 写法", open);
+    this.addRibbonIcon("sigma", S.search, open);
     this.addCommand({
       id: "open-latex-lookup",
-      name: "搜索 LaTeX 写法",
+      name: S.search,
       callback: open,
     });
   }
