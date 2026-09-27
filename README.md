@@ -4,6 +4,21 @@ IDE-style LaTeX autocomplete for [Obsidian](https://obsidian.md). Type inside a 
 
 [中文说明](#中文说明)
 
+## Why another LaTeX completer?
+
+Most LaTeX completers match what you type against command names, so you have to know `\overset` or `\left.` before they can help. LaTeX Autofill matches what you mean.
+
+| | LaTeX Autofill | Command-name completers (e.g. Completr) |
+|---|---|---|
+| Find `\frac{\partial f}{\partial x}` by typing | `偏导数`, or `partial derivative` in the search window | `\frac` or `\partial` |
+| Search in Chinese | Yes | No |
+| Each entry shows a name and category | Yes (`偏导数 · partial derivative · 运算`) | Command only |
+| Matrices and `cases` | Inserted with example contents | Inserted as an empty `\begin … \end` skeleton |
+| Number of commands | About 230, curated | Much larger |
+| Jump between multiple placeholders | First argument only | Yes |
+
+If you already know the command names and want the largest list, Completr is a great choice. If you often know what you want but not what it's called, try this one.
+
 ## Features
 
 - **Autocomplete while typing.** Type `\` followed by a command or a keyword (`\frac`, `\sum`, `\integral`) anywhere. Inside `$...$` or `$$...$$` you can skip the backslash: three or more letters (`alpha`, `matrix`) or any Chinese word (`求和`) is enough.
@@ -44,6 +59,21 @@ Pull requests with new entries are welcome.
 ## 中文说明
 
 在 Obsidian 公式里打字时，像 IDE 一样在光标处弹出 LaTeX 补全。中文名、英文名或命令本身都能搜到。
+
+### 和其他补全插件有什么不同
+
+大多数 LaTeX 补全插件只按命令名匹配，得先知道命令叫什么才能用。这个插件按意思匹配：想要偏导数，直接打「偏导数」就行。
+
+| | LaTeX Autofill | 按命令名补全的插件（如 Completr） |
+|---|---|---|
+| 找到 `\frac{\partial f}{\partial x}` 要打 | `偏导数`（搜索窗口里也可以打 `partial derivative`） | `\frac` 或 `\partial` |
+| 中文搜索 | 支持 | 不支持 |
+| 每条显示名称和分类 | 是（`偏导数 · partial derivative · 运算`） | 只显示命令 |
+| 矩阵、分段函数 | 插入带示例内容的完整写法 | 插入空的 `\begin … \end` 骨架 |
+| 命令数量 | 约 230 条，精选 | 多得多 |
+| 在多个占位符之间跳转 | 只选中第一个参数 | 支持 |
+
+已经熟悉命令名、想要最全的命令列表，Completr 很好用；知道想要什么却记不住叫什么，就试试这个。
 
 ### 怎么用
 
