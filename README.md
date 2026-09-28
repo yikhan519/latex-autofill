@@ -4,7 +4,7 @@ IDE-style LaTeX autocomplete for [Obsidian](https://obsidian.md). Type inside a 
 
 [中文说明](#中文说明)
 
-![LaTeX Autofill demo](docs/demo.gif)
+![LaTeX Autofill demo](docs/demo-en.gif)
 
 ## Why another LaTeX completer?
 
@@ -24,7 +24,7 @@ Other Obsidian plugins cover parts of this, and each has its own strengths:
 
 The comparison is based on each project's README as of September 2026. If something here is out of date, please open an issue.
 
-![Completion list](docs/completion.png)
+![Completion list](docs/completion-en.png)
 
 ## Features
 
@@ -37,7 +37,7 @@ The comparison is based on each project's README as of September 2026. If someth
 - **Search window.** Open "Search LaTeX" from the command palette or the Σ ribbon icon to browse everything. `Enter` inserts, `Shift+Enter` inserts wrapped in `$ $`, `Cmd/Ctrl+Enter` copies.
 - **Interface language.** Menus and hints are in Chinese when Obsidian's language is Chinese, and in English otherwise. Search always accepts both.
 
-![Search window](docs/search.png)
+![Search window](docs/search-en.png)
 
 | Key | Action |
 |---|---|
