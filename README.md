@@ -48,7 +48,13 @@ The comparison is based on each project's README as of September 2026. If someth
 
 ## Installation
 
-### Beta through BRAT
+### Community plugins
+
+1. In Obsidian, open **Settings → Community plugins → Browse**.
+2. Search for "LaTeX Autofill", or open the [community plugin page](https://community.obsidian.md/plugins/latex-autofill).
+3. Choose **Install**, then **Enable**.
+
+### Early builds via BRAT
 
 1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat) from **Settings → Community plugins**.
 2. Run **BRAT: Add a beta plugin for testing** from the command palette.
@@ -128,7 +134,13 @@ Obsidian 里还有几个插件也能做其中一部分，各有长处：
 
 ### 安装
 
-**通过 BRAT 安装测试版**
+**社区插件**
+
+1. 在 Obsidian 里打开「设置 → 第三方插件 → 浏览」。
+2. 搜索 LaTeX Autofill，或打开[社区插件页面](https://community.obsidian.md/plugins/latex-autofill)。
+3. 选择安装，然后启用。
+
+**通过 BRAT 安装开发版**
 
 1. 在「设置 → 第三方插件」里安装并启用 [BRAT](https://github.com/TfTHacker/obsidian42-brat)。
 2. 在命令面板里运行 **BRAT: Add a beta plugin for testing**。
