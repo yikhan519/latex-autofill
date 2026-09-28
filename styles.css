@@ -35,7 +35,7 @@
 }
 
 .suggestion-container.latex-lookup-suggest {
-  width: 460px;
+  width: 540px;
   max-width: 90vw;
   padding: 0;
   border-radius: 6px;
@@ -127,6 +127,37 @@
   color: var(--lookup-muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* Inline popup only. Primary name and category never shrink. The secondary
+   label ellipsizes when the row is tight; the LaTeX column can too.
+   The modal keeps the grouped flex row above. */
+.latex-lookup-suggest .latex-lookup-main {
+  display: contents;
+}
+
+.latex-lookup-suggest .latex-lookup-name,
+.latex-lookup-suggest .latex-lookup-en,
+.latex-lookup-suggest .latex-lookup-cat {
+  align-self: baseline;
+}
+
+.latex-lookup-suggest .latex-lookup-name,
+.latex-lookup-suggest .latex-lookup-cat {
+  flex-shrink: 0;
+}
+
+.latex-lookup-suggest .latex-lookup-en {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Yield before the secondary label so a normal row keeps both names. */
+.latex-lookup-suggest code.latex-lookup-code {
+  flex-shrink: 20;
+  min-width: 0;
 }
 
 code.latex-lookup-code {
