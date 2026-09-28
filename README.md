@@ -29,13 +29,13 @@ The comparison is based on each project's README as of September 2026. If someth
 ## Features
 
 - **Autocomplete while typing.** Type `\` followed by a command or a keyword (`\frac`, `\sum`, `\integral`) anywhere. Inside `$...$` or `$$...$$` you can skip the backslash: three or more letters (`alpha`, `matrix`) or any Chinese word (`求和`) is enough. Without the backslash only curated entries are shown, so ordinary words in a formula don't flood the list. Inside `\text{…}`, `\mbox{…}`, `\operatorname{…}` and similar text-mode commands, the list only opens after a backslash, so you can write prose there.
-- **English and Chinese search.** 236 curated entries covering operators, relations, sets, logic, arrows, brackets, fonts, accents, functions, matrices, environments, spacing, probability, and the Greek alphabet, ranked above the plain command list.
+- **English and Chinese search.** 236 curated entries covering operators, relations, sets, logic, arrows, brackets, fonts, accents, functions, matrices, environments, spacing, probability, and the Greek alphabet, ranked above the plain command list. Each entry has a short English name (`Summation`, `Definite integral`, `Proportional to`), so English queries rank the same way Chinese ones do.
 - **Placeholders.** After inserting, the first argument is selected. `Tab` jumps to the next one and `Shift+Tab` goes back; after the last one, `Tab` moves the cursor past the snippet. Remaining placeholders are underlined. In matrices and `cases`, every cell is a placeholder. Commands from the plain list insert empty arguments, so nothing is left behind if you skip one.
 - **Nested snippets.** Completing inside a placeholder (for example `\sqrt` inside `\frac{…}`) keeps the outer snippet's remaining placeholders.
 - **Inline-aware.** Multi-line environments are flattened to one line inside `$...$`.
 - **Auto-wrap outside math.** Triggering with `\` in normal text inserts `$...$` for you. Code blocks (```` ``` ```` and `~~~`) and inline code are left alone.
 - **Search window.** Open "Search LaTeX" from the command palette or the Σ ribbon icon to browse everything. `Enter` inserts, `Shift+Enter` inserts wrapped in `$ $`, `Cmd/Ctrl+Enter` copies.
-- **Interface language.** Menus and hints are in Chinese when Obsidian's language is Chinese, and in English otherwise. Search always accepts both.
+- **Interface language.** Menus, hints, and formula names follow Obsidian's language: Chinese names when it is Chinese (with the English name beside them), and English names otherwise (with the Chinese name beside them). Search always accepts both.
 
 ![Search window](docs/search.png)
 
@@ -74,10 +74,10 @@ Requires Obsidian 1.7.2 or later.
 Curated entries live in the `DATA` block at the top of `main.js`, one per line:
 
 ```
-category ;; Chinese name ;; keywords (English and Chinese) ;; LaTeX
+category ;; Chinese name ;; keywords (English and Chinese) ;; LaTeX ;; English name
 ```
 
-Each `{...}` argument and each matrix cell becomes a placeholder automatically. Pull requests with new entries are welcome.
+The English name is optional. Leave it off and it is taken from the first English keywords. Each `{...}` argument and each matrix cell becomes a placeholder automatically. Pull requests with new entries are welcome.
 
 ## Credits
 
@@ -122,7 +122,7 @@ Obsidian 里还有几个插件也能做其中一部分，各有长处：
 - 在 `$...$` 里插入多行环境，会自动合并成一行。
 - 在公式外面用 `\` 触发，会自动包上 `$ $`。代码块（```` ``` ```` 和 `~~~`）和行内代码里不会触发。
 - 按 `Cmd+P` 搜索「搜索 LaTeX 写法」，或点左侧 Σ 图标，可以打开完整的搜索窗口。
-- Obsidian 语言设为中文时界面显示中文，否则显示英文。搜索始终中英文都支持。
+- Obsidian 语言设为中文时，界面和公式名显示中文，英文名附在旁边；否则公式名显示英文，中文名附在旁边。搜索始终中英文都支持。
 
 ![搜索窗口](docs/search.png)
 
