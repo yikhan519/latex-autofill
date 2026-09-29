@@ -1,8 +1,38 @@
 # LaTeX Autofill
 
+[![Obsidian Community Plugins](https://img.shields.io/badge/Obsidian-Community%20Plugins-483699?logo=obsidian&logoColor=white)](https://community.obsidian.md/plugins/latex-autofill)
+[![Downloads](https://img.shields.io/badge/dynamic/json?color=2ea44f&label=downloads&query=%24%5B%22latex-autofill%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json)](https://community.obsidian.md/plugins/latex-autofill)
+[![GitHub stars](https://img.shields.io/github/stars/yikhan519/latex-autofill?style=flat&logo=github)](https://github.com/yikhan519/latex-autofill/stargazers)
+[![License: MIT](https://img.shields.io/github/license/yikhan519/latex-autofill)](LICENSE)
+
 IDE-style LaTeX autocomplete for [Obsidian](https://obsidian.md). Type inside a math block and a completion list pops up at the cursor, the way code completion works in an IDE. Every command can be found by its English name, its Chinese name, or the LaTeX command itself.
 
 [中文说明](#中文说明)
+
+## Installation
+
+Requires Obsidian **1.7.2** or later.
+
+### Community plugins
+
+Install from the [official Obsidian Community Plugins directory](https://community.obsidian.md/plugins/latex-autofill):
+
+1. In Obsidian, open **Settings → Community plugins → Browse**.
+2. Search for **"LaTeX Autofill"**.
+3. Choose **Install**, then **Enable**.
+
+### Early builds via BRAT
+
+1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat) from **Settings → Community plugins**.
+2. Run **BRAT: Add a beta plugin for testing** from the command palette.
+3. Enter `yikhan519/latex-autofill` and choose the latest version.
+4. Enable **LaTeX Autofill** in **Settings → Community plugins**. BRAT keeps it updated.
+
+### Manual
+
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](../../releases/latest).
+2. Create the folder `<your vault>/.obsidian/plugins/latex-autofill/` and put the three files in it.
+3. In Obsidian, open **Settings → Community plugins**, then enable **LaTeX Autofill**.
 
 ![LaTeX Autofill demo](docs/demo-en.gif)
 
@@ -46,29 +76,6 @@ The comparison is based on each project's README as of September 2026. If someth
 | `Tab` / `Shift+Tab` | Next / previous placeholder |
 | `Esc` | Close the list, or stop placeholder jumping |
 
-## Installation
-
-### Community plugins
-
-1. In Obsidian, open **Settings → Community plugins → Browse**.
-2. Search for "LaTeX Autofill", or open the [community plugin page](https://community.obsidian.md/plugins/latex-autofill).
-3. Choose **Install**, then **Enable**.
-
-### Early builds via BRAT
-
-1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat) from **Settings → Community plugins**.
-2. Run **BRAT: Add a beta plugin for testing** from the command palette.
-3. Enter `yikhan519/latex-autofill` and choose the latest version.
-4. Enable **LaTeX Autofill** in **Settings → Community plugins**. BRAT keeps it updated.
-
-### Manual
-
-1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](../../releases/latest).
-2. Create the folder `<your vault>/.obsidian/plugins/latex-autofill/` and put the three files in it.
-3. In Obsidian, open **Settings → Community plugins**, then enable **LaTeX Autofill**.
-
-Requires Obsidian 1.7.2 or later.
-
 ## Notes
 
 - Inside a `$$` block, a plain English word can open the list. Press `Esc` first if you want `Enter` to start a new line.
@@ -94,6 +101,29 @@ The plain command list comes from [Completr](https://github.com/tth05/obsidian-c
 ## 中文说明
 
 在 Obsidian 公式里打字时，像 IDE 一样在光标处弹出 LaTeX 补全。中文名、英文名或命令本身都能搜到。
+
+### 安装
+
+需要 Obsidian **1.7.2** 或更高版本。
+
+**社区插件**
+
+从 [Obsidian 官方社区插件目录](https://community.obsidian.md/plugins/latex-autofill) 安装：
+
+1. 在 Obsidian 里打开「设置 → 第三方插件 → 浏览」。
+2. 搜索「LaTeX Autofill」。
+3. 选择安装，然后启用。
+
+**通过 BRAT 安装开发版**
+
+1. 在「设置 → 第三方插件」里安装并启用 [BRAT](https://github.com/TfTHacker/obsidian42-brat)。
+2. 在命令面板里运行 **BRAT: Add a beta plugin for testing**。
+3. 输入 `yikhan519/latex-autofill`，选择最新版本。
+4. 在「设置 → 第三方插件」里启用 **LaTeX Autofill**。之后 BRAT 会自动更新。
+
+**手动安装**
+
+从 [最新 Release](../../releases/latest) 下载 `main.js`、`manifest.json`、`styles.css`，放进 `<你的 Vault>/.obsidian/plugins/latex-autofill/`，再到「设置 → 第三方插件」里启用 **LaTeX Autofill**。
 
 ![LaTeX Autofill 演示](docs/demo.gif)
 
@@ -131,27 +161,6 @@ Obsidian 里还有几个插件也能做其中一部分，各有长处：
 - Obsidian 语言设为中文时，界面和公式名显示中文，英文名附在旁边；否则公式名显示英文，中文名附在旁边。搜索始终中英文都支持。
 
 ![搜索窗口](docs/search.png)
-
-### 安装
-
-**社区插件**
-
-1. 在 Obsidian 里打开「设置 → 第三方插件 → 浏览」。
-2. 搜索 LaTeX Autofill，或打开[社区插件页面](https://community.obsidian.md/plugins/latex-autofill)。
-3. 选择安装，然后启用。
-
-**通过 BRAT 安装开发版**
-
-1. 在「设置 → 第三方插件」里安装并启用 [BRAT](https://github.com/TfTHacker/obsidian42-brat)。
-2. 在命令面板里运行 **BRAT: Add a beta plugin for testing**。
-3. 输入 `yikhan519/latex-autofill`，选择最新版本。
-4. 在「设置 → 第三方插件」里启用 **LaTeX Autofill**。之后 BRAT 会自动更新。
-
-**手动安装**
-
-从 [最新 Release](../../releases/latest) 下载 `main.js`、`manifest.json`、`styles.css`，放进 `<你的 Vault>/.obsidian/plugins/latex-autofill/`，再到「设置 → 第三方插件」里启用 **LaTeX Autofill**。
-
-需要 Obsidian 1.7.2 或更高版本。
 
 ### 致谢
 
