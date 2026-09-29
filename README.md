@@ -63,7 +63,7 @@ The comparison is based on each project's README as of September 2026. If someth
 ## Features
 
 - **Autocomplete while typing.** Type `\` followed by a command or a keyword (`\frac`, `\sum`, `\integral`) anywhere. Inside `$...$` or `$$...$$` you can skip the backslash: three or more letters (`alpha`, `matrix`) or any Chinese word (`求和`) is enough. Without the backslash only curated and personal-dictionary entries are shown, so ordinary words in a formula don't flood the list. Inside `\text{…}`, `\mbox{…}`, `\operatorname{…}` and similar text-mode commands, the list only opens after a backslash, so you can write prose there.
-- **English and Chinese search.** 236 curated entries covering operators, relations, sets, logic, arrows, brackets, fonts, accents, functions, matrices, environments, spacing, probability, and the Greek alphabet, ranked above the plain command list. Each entry has a short English name (`Summation`, `Definite integral`, `Proportional to`), so English queries rank the same way Chinese ones do.
+- **English, Chinese, and pinyin search.** 236 curated entries covering operators, relations, sets, logic, arrows, brackets, fonts, accents, functions, matrices, environments, spacing, probability, and the Greek alphabet, ranked above the plain command list. Each entry has a short English name (`Summation`, `Definite integral`, `Proportional to`), so English queries rank the same way Chinese ones do. You can also type pinyin without converting it: `shishuj` finds 实数集, `piand` finds 偏导数, and initials such as `ssj` or `pd` work too. An exact Chinese or English name still ranks above a pinyin hit.
 - **Placeholders.** After inserting, the first argument is selected. `Tab` jumps to the next one and `Shift+Tab` goes back; after the last one, `Tab` moves the cursor past the snippet. Remaining placeholders are underlined. In matrices and `cases`, every cell is a placeholder. Commands from the plain list insert empty arguments, so nothing is left behind if you skip one. Custom templates can also use `$1`, `${2:default}`, and `$0` (see below).
 - **Personal dictionary.** Add your own formulas, or extra aliases for built-in ones, in a vault file. No settings page.
 - **Usage ranking.** Formulas you actually insert or copy rank higher next time. The boost is capped, so it cannot lift a weaker match over an exact name that already ranked at least as high. Counts stay on this device.
@@ -117,6 +117,12 @@ Custom templates understand numbered placeholders:
 - `#` and `~` are ordinary characters here. They still mark placeholders in the built-in command list. Write a literal dollar sign as `\$`.
 
 Inside `${...}`, write `\}` for a closing brace and `\\` for a backslash. Lines starting with `#` are comments. Prose is ignored. Examples inside a code fence are not active until you move the line outside it.
+
+Chinese names and Chinese aliases are searched by pinyin automatically, including a syllable you have not finished (`shishuj`, `piand`) and consonant initials (`ssj`, `pd`). A two-letter initial opens in the search window, or inline after a backslash (`\pd`); without a backslash the inline list still waits for three letters. If a reading is wrong or the character is outside the everyday simplified set, pin the syllables yourself (`ü` is written `v`):
+
+```
+~实数集 ;; shi shu ji
+```
 
 ## How often you use a formula
 
@@ -194,7 +200,7 @@ Obsidian 里还有几个插件也能做其中一部分，各有长处：
 ### 怎么用
 
 - 任何地方打 `\` 加命令或关键词，例如 `\frac`、`\sum`、`\求和`。
-- 在 `$...$` 或 `$$...$$` 里可以不打 `\`：连续 3 个以上英文字母，或者任意中文，都会弹出候选。不打 `\` 时只显示精选条目和个人词典里的条目，免得公式里的普通单词弹出一大堆。
+- 在 `$...$` 或 `$$...$$` 里可以不打 `\`：连续 3 个以上英文字母，或者任意中文，都会弹出候选。不打 `\` 时只显示精选条目和个人词典里的条目，免得公式里的普通单词弹出一大堆。拼音不用切到中文：`shishuj` 找到实数集，`piand` 找到偏导数，声母简拼 `ssj`、`pd` 也可以。精确的中文名或英文名仍然排在拼音前面。两个字母的简拼在搜索窗口里直接生效；公式里要打出列表，先加 `\`（例如 `\pd`），否则仍要满 3 个字母。
 - 在 `\text{…}`、`\mbox{…}`、`\operatorname{…}` 等文字命令里，只有打 `\` 才会弹出候选，可以放心写中文或英文句子。
 - `↑` `↓` 选择，`回车` 或 `Tab` 插入，`esc` 关闭。
 - 插入后自动选中第一个参数；`Tab` 跳到下一个，`Shift+Tab` 回到上一个，最后一个之后再按 `Tab`，光标跳到这段写法的末尾。没填的参数有下划线提示。矩阵和分段函数的每一格都是参数。普通命令表里的命令插入的是空参数，跳过不填也不会留下多余字符。自己写的模板还可以用 `$1`、`${2:默认文字}` 和 `$0`，见下文。
@@ -237,6 +243,12 @@ Obsidian 里还有几个插件也能做其中一部分，各有长处：
 - 在自定义模板里 `#` 和 `~` 是普通字符。内置命令表仍然用它们做占位符。字面量美元符号写成 `\$`。
 
 在 `${...}` 里，右花括号写成 `\}`，反斜杠写成 `\\`。以 `#` 开头的行是注释，普通说明文字会忽略，代码块里的例子不会生效。
+
+中文名和中文别名会自动按拼音搜索，音节打到一半也行。读音不对，或者字不在常用字表里，可以自己标音节（ü 写成 v）：
+
+```
+~实数集 ;; shi shu ji
+```
 
 ### 使用频率
 

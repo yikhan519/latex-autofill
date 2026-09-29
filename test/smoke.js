@@ -296,6 +296,54 @@ test("usage boost is capped and cannot outrank an exact name", () => {
   assert.deepStrictEqual(empty.map((e) => e.id), ["b", "a"]);
 });
 
+test("pinyin search finds partial syllables, initials, and personal entries", () => {
+  const entries = api.buildEntries();
+  const find = (query, opts) => api.searchEntries(entries, query, { allowFuzzy: false, ...opts });
+
+  assert.strictEqual(find("shishuj")[0].name, "实数集");
+  assert.strictEqual(find("shishuji")[0].name, "实数集");
+  assert.ok(find("shishuj", { includeExtra: false })[0].name === "实数集");
+  assert.ok(find("piand")[0].name.includes("偏导"));
+  assert.ok(find("pd").some((e) => e.name.includes("偏导")));
+  assert.strictEqual(find("pd")[0].name, "偏导数");
+  assert.strictEqual(find("ssj")[0].name, "实数集");
+  assert.ok(!find("sss").some((e) => e.name === "实数集"));
+  assert.ok(!find("shuo").some((e) => e.name === "实数集"));
+
+  assert.ok(find("hanglie").some((e) => e.name === "行列式"));
+  assert.ok(find("xinglie").some((e) => e.name === "行列式"));
+  assert.ok(find("changxiang").some((e) => e.name.includes("长向")));
+  assert.ok(find("zhangxiang").some((e) => e.name.includes("长向")));
+
+  assert.ok(/frac/i.test(find("frac")[0].tex) || find("frac")[0].name.includes("分数"));
+  assert.ok(/int/i.test(`${find("int")[0].tex} ${find("int")[0].keys}`));
+  assert.strictEqual(find("sum")[0].name, "求和");
+  assert.strictEqual(find("sin")[0].name, "三角函数");
+  assert.ok(/\\tan/.test(find("tan")[0].tex) || find("tan")[0].name.includes("三角"));
+  assert.strictEqual(find("求和")[0].name, "求和");
+  assert.strictEqual(find("partial derivative")[0].name, "偏导数");
+  assert.strictEqual(find("alpha")[0].tex, "\\alpha");
+
+  const uncovered = entries.filter((e) => /[\u3400-\u9fff]/.test(e.name) && (!e.pySeqs || !e.pySeqs.length));
+  assert.deepStrictEqual(uncovered.map((e) => e.name), []);
+
+  const custom = api.rebuildFromDictionary("傅里叶变换 ;; fft ;; \\mathcal{F}\n");
+  assert.deepStrictEqual(custom.errors, []);
+  const fourier = api.searchEntries(custom.entries, "fuliye", { allowFuzzy: false });
+  assert.ok(fourier.some((e) => e.name === "傅里叶变换"));
+  const mid = api.searchEntries(custom.entries, "fuliy", { allowFuzzy: false });
+  assert.ok(mid.some((e) => e.name === "傅里叶变换"));
+
+  const aliased = api.rebuildFromDictionary("+求和 ;; 连加\n");
+  assert.deepStrictEqual(aliased.errors, []);
+  assert.ok(api.searchEntries(aliased.entries, "lianjia", { allowFuzzy: false }).some((e) => e.name === "求和"));
+
+  const overridden = api.rebuildFromDictionary("特例 ;; k ;; \\alpha\n~特例 ;; te shu\n");
+  assert.deepStrictEqual(overridden.errors, []);
+  assert.ok(api.searchEntries(overridden.entries, "teshu", { allowFuzzy: false }).some((e) => e.name === "特例"));
+  assert.ok(api.searchEntries(overridden.entries, "teli", { allowFuzzy: false }).some((e) => e.name === "特例"));
+});
+
 test("usage map stays bounded and does not mutate the previous map", () => {
   let counts = Object.create(null);
   for (let i = 0; i < 450; i++) counts = api.bumpUsage(counts, `id${i}`, 400);
