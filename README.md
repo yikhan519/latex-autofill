@@ -54,13 +54,19 @@ Other Obsidian plugins cover parts of this, and each has its own strengths:
 
 The comparison is based on each project's README as of September 2026. If something here is out of date, please open an issue.
 
+## LaTeX Suite
+
+[LaTeX Suite](https://github.com/artisticat1/obsidian-latex-suite) expands abbreviations as you type: a short trigger becomes a snippet. LaTeX Autofill does the other half of the job. You search for a formula by what it means, in Chinese or English, and insert a template. The two complement each other. Both listen for Tab inside math; while this plugin's list is open or its placeholders are active, it takes Tab so you can move through the snippet you just inserted.
+
 ![Completion list](docs/completion-en.png)
 
 ## Features
 
-- **Autocomplete while typing.** Type `\` followed by a command or a keyword (`\frac`, `\sum`, `\integral`) anywhere. Inside `$...$` or `$$...$$` you can skip the backslash: three or more letters (`alpha`, `matrix`) or any Chinese word (`求和`) is enough. Without the backslash only curated entries are shown, so ordinary words in a formula don't flood the list. Inside `\text{…}`, `\mbox{…}`, `\operatorname{…}` and similar text-mode commands, the list only opens after a backslash, so you can write prose there.
+- **Autocomplete while typing.** Type `\` followed by a command or a keyword (`\frac`, `\sum`, `\integral`) anywhere. Inside `$...$` or `$$...$$` you can skip the backslash: three or more letters (`alpha`, `matrix`) or any Chinese word (`求和`) is enough. Without the backslash only curated and personal-dictionary entries are shown, so ordinary words in a formula don't flood the list. Inside `\text{…}`, `\mbox{…}`, `\operatorname{…}` and similar text-mode commands, the list only opens after a backslash, so you can write prose there.
 - **English and Chinese search.** 236 curated entries covering operators, relations, sets, logic, arrows, brackets, fonts, accents, functions, matrices, environments, spacing, probability, and the Greek alphabet, ranked above the plain command list. Each entry has a short English name (`Summation`, `Definite integral`, `Proportional to`), so English queries rank the same way Chinese ones do.
-- **Placeholders.** After inserting, the first argument is selected. `Tab` jumps to the next one and `Shift+Tab` goes back; after the last one, `Tab` moves the cursor past the snippet. Remaining placeholders are underlined. In matrices and `cases`, every cell is a placeholder. Commands from the plain list insert empty arguments, so nothing is left behind if you skip one.
+- **Placeholders.** After inserting, the first argument is selected. `Tab` jumps to the next one and `Shift+Tab` goes back; after the last one, `Tab` moves the cursor past the snippet. Remaining placeholders are underlined. In matrices and `cases`, every cell is a placeholder. Commands from the plain list insert empty arguments, so nothing is left behind if you skip one. Custom templates can also use `$1`, `${2:default}`, and `$0` (see below).
+- **Personal dictionary.** Add your own formulas, or extra aliases for built-in ones, in a vault file. No settings page.
+- **Usage ranking.** Formulas you actually insert or copy rank higher next time. The boost is capped, so it cannot lift a weaker match over an exact name that already ranked at least as high. Counts stay on this device.
 - **Nested snippets.** Completing inside a placeholder (for example `\sqrt` inside `\frac{…}`) keeps the outer snippet's remaining placeholders.
 - **Inline-aware.** Multi-line environments are flattened to one line inside `$...$`.
 - **Auto-wrap outside math.** Triggering with `\` in normal text inserts `$...$` for you. Code blocks (```` ``` ```` and `~~~`) and inline code are left alone.
@@ -82,15 +88,49 @@ The comparison is based on each project's README as of September 2026. If someth
 - If you also use LaTeX Suite, both plugins listen for `Tab` in math. While the list is open or placeholders are active, this plugin takes it.
 - Don't enable Completr's LaTeX provider at the same time, or two lists will pop up.
 
+## Personal dictionary
+
+Your own entries live in `LaTeX Autofill/dictionary.md` at the root of the vault. Run **Open personal dictionary** from the command palette (or search for 打开个人词典). The first time, the plugin creates the file with a commented template. Saving reloads the list after a short pause. A bad line is reported with its line number and the other lines still load. The plugin stays offline: the file is parsed locally and never sent anywhere.
+
+A new entry is one line. The English name is optional. Keywords are separated by spaces and can be Chinese or English:
+
+```
+中文名 ;; 关键词 ;; LaTeX ;; English name
+```
+
+To set a category, use five fields with the same separator: category, Chinese name, keywords, LaTeX, English name.
+
+Add aliases to an existing entry, built-in or your own. The target is the Chinese name, the English name, the LaTeX, or the entry id. Separate several aliases with `|`. Aliases are searched like names.
+
+```
++求和 ;; 连加符号 | running total
+```
+
+Some formulas belong to more than one built-in entry. `\mathbb{R}` is both the real numbers and blackboard bold. If the LaTeX alone matches more than one entry, the line is reported and nothing is changed; use the name or an id such as `builtin:集合/实数集`.
+
+Custom templates understand numbered placeholders:
+
+- `$1`, `$2`, … are visited in numeric order with `Tab` and `Shift+Tab`, not source order.
+- `${1:default text}` inserts that text already selected, so typing replaces it.
+- `$0` is where the cursor stops after the last placeholder. Omit it and the cursor stops at the end.
+- A template with no `$` placeholders still treats each `{...}` argument as a placeholder, same as the built-in formulas.
+- `#` and `~` are ordinary characters here. They still mark placeholders in the built-in command list. Write a literal dollar sign as `\$`.
+
+Inside `${...}`, write `\}` for a closing brace and `\\` for a backslash. Lines starting with `#` are comments. Prose is ignored. Examples inside a code fence are not active until you move the line outside it.
+
+## How often you use a formula
+
+Inserting or copying a result gives it a bonus in later searches. The bonus grows with repeated use and is capped. It will not move a partial match above an exact Chinese or English name that already ranked at least as high. Counts are kept in this device's local storage, not in the vault file, and the list of counts is bounded. **Clear LaTeX usage statistics** (清除 LaTeX 使用统计) resets them.
+
 ## Adding entries
 
-Curated entries live in the `DATA` block at the top of `main.js`, one per line:
+For a formula only you need, use the personal dictionary above. Curated entries that ship with the plugin live in the `DATA` block at the top of `main.js`, one per line:
 
 ```
 category ;; Chinese name ;; keywords (English and Chinese) ;; LaTeX ;; English name
 ```
 
-The English name is optional. Leave it off and it is taken from the first English keywords. Each `{...}` argument and each matrix cell becomes a placeholder automatically. Pull requests with new entries are welcome.
+The English name is optional. Leave it off and it is taken from the first English keywords. Each `{...}` argument and each matrix cell becomes a placeholder automatically. Pull requests with new entries are welcome. `node test/smoke.js` checks dictionary parsing, aliases, placeholders, and ranking; that script is not part of the plugin.
 
 ## Credits
 
@@ -145,15 +185,21 @@ Obsidian 里还有几个插件也能做其中一部分，各有长处：
 
 以上对比依据各项目 2026 年 9 月的 README。如有过时的地方，欢迎提 issue。
 
+### LaTeX Suite
+
+[LaTeX Suite](https://github.com/artisticat1/obsidian-latex-suite) 是缩写展开：你先设好一个短触发词，打出来就变成一段公式。LaTeX Autofill 做的是另一半：按中文或英文意思搜索公式，再插入模板。两者互补。两边都会在公式里听 `Tab`；补全列表开着，或者占位符还在跳的时候，这个插件会先处理 `Tab`，方便在刚插入的写法里移动。
+
 ![补全列表](docs/completion.png)
 
 ### 怎么用
 
 - 任何地方打 `\` 加命令或关键词，例如 `\frac`、`\sum`、`\求和`。
-- 在 `$...$` 或 `$$...$$` 里可以不打 `\`：连续 3 个以上英文字母，或者任意中文，都会弹出候选。不打 `\` 时只显示精选条目，免得公式里的普通单词弹出一大堆。
+- 在 `$...$` 或 `$$...$$` 里可以不打 `\`：连续 3 个以上英文字母，或者任意中文，都会弹出候选。不打 `\` 时只显示精选条目和个人词典里的条目，免得公式里的普通单词弹出一大堆。
 - 在 `\text{…}`、`\mbox{…}`、`\operatorname{…}` 等文字命令里，只有打 `\` 才会弹出候选，可以放心写中文或英文句子。
 - `↑` `↓` 选择，`回车` 或 `Tab` 插入，`esc` 关闭。
-- 插入后自动选中第一个参数；`Tab` 跳到下一个，`Shift+Tab` 回到上一个，最后一个之后再按 `Tab`，光标跳到这段写法的末尾。没填的参数有下划线提示。矩阵和分段函数的每一格都是参数。普通命令表里的命令插入的是空参数，跳过不填也不会留下多余字符。
+- 插入后自动选中第一个参数；`Tab` 跳到下一个，`Shift+Tab` 回到上一个，最后一个之后再按 `Tab`，光标跳到这段写法的末尾。没填的参数有下划线提示。矩阵和分段函数的每一格都是参数。普通命令表里的命令插入的是空参数，跳过不填也不会留下多余字符。自己写的模板还可以用 `$1`、`${2:默认文字}` 和 `$0`，见下文。
+- **个人词典。** 在库里的一个文件中添加自己的公式，或给内置条目加别名。没有设置页。
+- **使用频率。** 真正插入或复制过的公式，下次会排得更靠前。加分有上限，不会让本来就排在精确名称后面的结果凭次数超到前面去。次数只存在这台设备上。
 - 在参数里再补全（比如在 `\frac{…}` 里补一个 `\sqrt`），外层剩下的参数照样能跳。
 - 在 `$...$` 里插入多行环境，会自动合并成一行。
 - 在公式外面用 `\` 触发，会自动包上 `$ $`。代码块（```` ``` ```` 和 `~~~`）和行内代码里不会触发。
@@ -161,6 +207,40 @@ Obsidian 里还有几个插件也能做其中一部分，各有长处：
 - Obsidian 语言设为中文时，界面和公式名显示中文，英文名附在旁边；否则公式名显示英文，中文名附在旁边。搜索始终中英文都支持。
 
 ![搜索窗口](docs/search.png)
+
+### 个人词典
+
+自己的条目写在库根目录的 `LaTeX Autofill/dictionary.md`。在命令面板里运行 **打开个人词典**（Open personal dictionary）。第一次会生成带说明的模板。保存后稍等片刻就会重新加载。某一行写错会带行号提示，其他行照常生效。插件保持离线，这个文件只在本地解析。
+
+新增一条，英文名可以省略，关键词用空格分隔：
+
+```
+中文名 ;; 关键词 ;; LaTeX ;; English name
+```
+
+要写分类就用五段，分隔符相同：分类、中文名、关键词、LaTeX、英文名。
+
+给已有条目追加别名。目标可以是中文名、英文名、LaTeX 或条目 id，多个别名用 `|` 分开。别名按名称参与搜索。
+
+```
++求和 ;; 连加符号 | running total
+```
+
+有的公式对应不止一条内置条目，例如 `\mathbb{R}` 既是实数集也是黑板粗体。只写公式会匹配到多条时，这一行会报错并且不会改动条目；请改用中文名，或 `builtin:集合/实数集` 这样的 id。
+
+自定义模板的占位符：
+
+- `$1`、`$2` 按编号跳转，不必按出现顺序。`Tab` / `Shift+Tab` 前后移动。
+- `${1:默认文字}` 插入后处于选中状态，直接输入就会覆盖。
+- `$0` 是最后一跳光标停下的位置；不写就停在末尾。
+- 完全没有 `$` 编号时，花括号里的内容仍是占位符，和内置公式一样。
+- 在自定义模板里 `#` 和 `~` 是普通字符。内置命令表仍然用它们做占位符。字面量美元符号写成 `\$`。
+
+在 `${...}` 里，右花括号写成 `\}`，反斜杠写成 `\\`。以 `#` 开头的行是注释，普通说明文字会忽略，代码块里的例子不会生效。
+
+### 使用频率
+
+插入或复制一次，这条结果之后会靠前一点。次数越多加分越多，但有上限：一个部分匹配的结果，如果本来就排在精确的中文名或英文名后面，不会单靠使用次数超到它前面。统计存在这台设备的本地存储里，不写进库文件，条数也有上限。命令面板里的 **清除 LaTeX 使用统计** 可以清空。
 
 ### 致谢
 
