@@ -205,7 +205,8 @@ const DATA = String.raw`
 符号 ;; 实部 虚部 ;; real imaginary part re im ;; \operatorname{Re}(z),\ \operatorname{Im}(z) ;; Real and imaginary parts
 符号 ;; 阿列夫 ;; aleph cardinal ;; \aleph_0 ;; Aleph
 符号 ;; 星号 ;; star ast asterisk ;; \star,\ \ast ;; Star
-符号 ;; 证毕 ;; qed square box 证明完毕 ;; \square,\ \blacksquare ;; QED
+符号 ;; 证毕（空心方块） ;; qed square box end of proof halmos tombstone 证明完毕 证明结束 空心 ;; \square ;; QED (open square)
+符号 ;; 证毕（实心方块） ;; qed blacksquare box end of proof halmos tombstone 证明完毕 证明结束 实心 ;; \blacksquare ;; QED (filled square)
 概率 ;; 期望 ;; expectation expected value ;; \mathbb{E}[X] ;; Expected value
 概率 ;; 概率 ;; probability ;; \mathbb{P}(A) ;; Probability
 概率 ;; 条件概率 ;; conditional probability ;; P(A \mid B) ;; Conditional probability
