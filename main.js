@@ -1319,6 +1319,265 @@ const COMPLETR_COMMANDS = [
   "\\zeta",
 ];
 
+const DICT_FOLDER = "LaTeX Autofill";
+const DICT_PATH = "LaTeX Autofill/dictionary.md";
+const DICT_DEBOUNCE_MS = 400;
+const USAGE_LIMIT = 400;
+const USAGE_BONUS_CAP = 36;
+const MAX_USAGE_COUNT = 100000;
+
+// Generated the first time the user opens the dictionary. Every non-entry line is
+// either a comment, prose, or a fenced example, so loading it adds nothing.
+const DICT_TEMPLATE = `# LaTeX Autofill 个人词典 / Personal dictionary
+
+这个文件在库里，会随库同步。改完保存后自动重新加载，没有单独的设置页。
+插件保持离线：词典只在本地解析，不会发起网络请求。
+
+使用统计（插入或复制某个公式的次数）存在本机，不写进这个文件，也不随库同步。
+在命令面板里运行「清除 LaTeX 使用统计」可以清掉。
+Usage counts stay on this device. They are not written into this file and do not sync with the vault.
+Run "Clear LaTeX usage statistics" from the command palette to reset them.
+
+以 # 开头的行是注释。普通说明文字会忽略。代码块里的例子不会生效；
+把示例那一行剪到代码块外面才会启用。
+Lines starting with # are comments. Prose is ignored. Examples inside code fences are not active;
+move a line outside the fence to enable it.
+
+## 新增一条 / New entry
+
+一行一条。英文名可以省略。关键词用空格分隔，中文和英文都可以。
+
+\`\`\`
+中文名 ;; 关键词 ;; LaTeX ;; English name
+\`\`\`
+
+需要分类时写成五段：分类、中文名、关键词、LaTeX、英文名，分隔符同样是空格加两个分号。
+
+自定义模板的占位符（内置条目仍用花括号，命令表仍用 # 和 ~）：
+
+- \`$1\`、\`$2\` 按编号跳转，不必按出现顺序。Tab 到下一个，Shift+Tab 回到上一个
+- \`\${1:默认文字}\` 插入后选中默认文字，接着打字就会覆盖
+- \`$0\` 是跳出占位符后光标停下的位置；不写则停在末尾
+- 模板里如果完全没有 $ 编号，花括号里的内容仍是占位符
+- \`#\` 和 \`~\` 在自定义模板里是普通字符。美元符号写成 \`\\$\`
+
+\`\`\`
+我的分数 ;; myfrac 自定义分式 ;; \\frac{\${1:a}}{\${2:b}}\$0 ;; My fraction
+\`\`\`
+
+## 给已有条目加别名 / Add an alias
+
+行首写 +。目标可以是中文名、英文名、LaTeX，或条目 id。多个别名用 | 分开。
+别名参与搜索，并且和名称一样加权。
+
+\`\`\`
++求和 ;; 连加符号 | running total
++builtin:集合/实数集 ;; 实数轴
+\`\`\`
+
+中文名和中文别名会自动转成拼音。个别读音不对时，可以写死音节（空格分开，ü 写成 v）：
+
+\`\`\`
+~实数集 ;; shi shu ji
+\`\`\`
+
+有些公式对应不止一条，例如实数集和黑板粗体都是 \\mathbb{R}。
+请改用中文名、英文名或上面这种 id，不要只用公式本身。
+`;
+
+let usageCounts = Object.create(null);
+let usageSave = null;
+
+function usageBonus(count) {
+  const n = Number(count);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const rounded = Math.round(10 * Math.log2(n + 1) * 10) / 10;
+  return Math.min(USAGE_BONUS_CAP, rounded);
+}
+
+function boundUsage(counts, maxEntries) {
+  const limit = maxEntries > 0 ? maxEntries : USAGE_LIMIT;
+  const ids = Object.keys(counts);
+  if (ids.length <= limit) return counts;
+  ids.sort((a, b) => (counts[b] - counts[a]) || (a < b ? -1 : a > b ? 1 : 0));
+  const kept = Object.create(null);
+  for (let i = 0; i < limit; i++) kept[ids[i]] = counts[ids[i]];
+  return kept;
+}
+
+function bumpUsage(counts, id, maxEntries) {
+  const limit = maxEntries > 0 ? maxEntries : USAGE_LIMIT;
+  const next = Object.assign(Object.create(null), counts);
+  next[id] = Math.min(MAX_USAGE_COUNT, (Number(next[id]) || 0) + 1);
+  if (Object.keys(next).length <= limit) return next;
+  const bounded = boundUsage(next, limit);
+  if (bounded[id]) return bounded;
+  const ordered = Object.keys(bounded).sort(
+    (a, b) => (bounded[a] - bounded[b]) || (a < b ? -1 : a > b ? 1 : 0),
+  );
+  delete bounded[ordered[0]];
+  bounded[id] = next[id];
+  return bounded;
+}
+
+function noteUsed(entry) {
+  if (!entry || !entry.id) return;
+  usageCounts = bumpUsage(usageCounts, entry.id, USAGE_LIMIT);
+  if (typeof usageSave === "function") usageSave();
+}
+
+function setUsageSaver(fn) {
+  usageSave = fn;
+}
+
+// Syllable → characters. Everyday simplified Chinese (GB2312 level 1) plus every
+// Han character used by the built-in entries. Most characters keep their common
+// toneless reading; polyphones that matter here (行, 长, 数, …) list each one.
+// ü is written v. Regenerate with: node scripts/gen-pinyin.js --write
+// (that script needs the dev package pinyin-pro; the plugin does not).
+/*PINYIN_TABLE*/
+const PINYIN_TABLE = "a:啊阿;ai:哀哎唉埃挨爱癌皑矮碍艾蔼隘;an:俺安岸按暗案氨胺鞍;ang:昂盎肮;ao:傲凹嚣奥懊敖澳熬翱袄;ba:八叭吧坝巴扒把拔捌爸疤笆罢芭跋霸靶;bai:佰拜摆柏白百稗败;ban:伴办半扮扳拌搬斑板版班瓣绊般颁;bang:傍帮梆棒榜磅绑膀蚌谤邦镑;bao:保剥包堡宝报抱暴爆胞苞薄褒豹雹饱鲍;bei:倍北卑备悲惫杯焙狈碑背被贝辈钡;ben:奔本笨苯;beng:崩泵甭绷蹦迸;bi:壁币庇弊彼必敝比毕毖毙痹碧笔臂蓖蔽逼避鄙闭陛鼻;bian:便卞变扁编贬辨辩辫边遍鞭;biao:彪标膘表;bie:别憋瘪鳖;bin:宾彬摈斌滨濒;bing:丙兵冰并柄炳病秉饼;bo:伯勃博帛拨搏播泊波渤玻箔簿脖膊舶菠薄钵铂驳;bu:不卜哺埠布怖捕步补部;ca:擦;cai:彩才材猜睬菜蔡裁财踩采;can:参惨惭残灿蚕餐;cang:仓沧舱苍藏;cao:操曹槽糙草;ce:侧册厕测策;ceng:层曾蹭;cha:刹叉察岔差插搽查碴茬茶诧;chai:差拆柴豺;chan:产掺搀缠蝉谗铲阐颤馋;chang:倡偿厂唱场尝常敞昌猖畅肠长;chao:吵嘲巢抄朝潮炒超钞;che:彻扯掣撤澈车;chen:尘忱晨沉臣衬趁辰郴陈;cheng:乘呈城惩成承撑橙澄秤称程诚逞骋;chi:侈匙吃尺弛持斥池炽痴翅耻赤迟驰齿;chong:充冲宠崇种虫重;chou:丑仇愁抽畴瞅稠筹绸臭踌酬;chu:储出初厨处搐楚橱滁畜矗础触躇锄除雏;chuai:揣;chuan:串传喘川椽穿船;chuang:创床疮窗闯;chui:吹垂捶炊锤;chun:唇春椿淳纯蠢醇;chuo:戳绰;ci:刺差慈次此瓷疵磁茨词赐辞雌;cong:丛从匆囱聪葱;cou:凑;cu:促簇粗醋;cuan:窜篡蹿;cui:催崔摧淬瘁粹翠脆;cun:存寸村;cuo:挫措搓撮磋错;da:大打搭瘩答达;dai:代傣呆大带待怠戴歹殆袋贷逮;dan:丹但单弹惮担掸旦氮淡耽胆蛋诞郸;dang:党当挡档荡;dao:倒刀到导岛悼捣盗祷稻蹈道;de:地得德的;dei:得;deng:凳灯登瞪等蹬邓;di:低地堤嫡帝底弟抵敌涤滴狄的笛第缔蒂迪递;dian:佃典垫奠店惦掂殿淀滇点电甸碘靛颠;diao:凋刁叼吊掉碉钓雕;die:叠爹碟蝶谍跌迭;ding:丁叮定盯订钉锭顶鼎;diu:丢;dong:东侗冬冻动恫懂栋洞董;dou:兜抖斗痘豆逗都陡;du:堵妒度杜毒渡犊独督睹肚读赌都镀;duan:断段短端缎锻;dui:兑堆对队;dun:吨墩敦盾蹲遁钝顿;duo:剁哆垛堕多夺惰掇朵舵跺躲;e:俄厄娥峨恶扼蛾讹轭遏鄂阿额饿鹅;en:恩;er:二儿尔洱而耳贰饵;fa:乏伐发法珐筏罚阀;fan:凡反帆樊泛烦犯番矾繁翻范藩贩返钒饭;fang:仿坊妨房放方纺肪芳访防;fei:匪吠啡废斐沸肥肺菲诽费非飞;fen:份分吩坟奋忿愤氛汾焚粉粪纷芬酚;feng:丰冯凤奉封峰枫烽疯缝蜂讽逢锋风;fo:佛;fou:否;fu:付伏俘俯傅副咐复夫妇孵富幅府弗扶抚拂敷斧服氟浮涪父甫福符缚肤腐腑腹袱覆讣负赋赴辅辐釜阜附;ga:伽嘎噶夹;gai:改概溉盖该钙;gan:干感敢杆柑甘秆竿肝赣赶;gang:冈刚岗杠港纲缸肛钢;gao:告搞皋稿篙糕羔膏高;ge:个割各咯哥戈搁格歌疙胳葛铬阁隔革鸽;gei:给;gen:根跟;geng:埂庚更梗羹耕耿;gong:供公共功宫工巩弓恭拱攻汞贡躬龚;gou:勾垢够构沟狗苟购钩;gu:估古咕固姑孤故沽箍股菇蛊谷辜雇顾骨鼓;gua:刮剐寡挂瓜褂;guai:乖怪拐;guan:关冠官惯棺灌管罐观贯馆;guang:光广逛;gui:刽圭归柜桂瑰癸硅规诡贵跪轨闺鬼龟;gun:棍滚辊;guo:国果裹过郭锅;ha:哈蛤;hai:亥咳孩害氦海还骇骸;han:函含喊寒悍憨憾捍撼旱汉汗涵焊罕翰邯酣韩;hang:夯杭航行;hao:号嚎壕好毫浩耗豪郝镐;he:何合呵和喝核河涸盒禾荷菏褐贺赫阂鹤;hei:嘿黑;hen:很恨狠痕;heng:亨哼恒横衡;hong:哄宏弘洪烘红虹轰鸿;hou:侯候厚后吼喉猴;hu:乎互呼和唬壶弧忽户护沪湖狐瑚糊胡葫虎蝴;hua:划化华哗滑猾画花话;huai:坏徊怀槐淮;huan:唤宦幻患换桓欢涣焕环痪缓豢还;huang:凰幌恍惶慌晃煌皇磺簧荒蝗谎黄;hui:会卉回徽恢悔惠慧挥晦毁汇灰烩秽绘蛔讳诲贿辉;hun:婚昏浑混荤魂;huo:伙和惑或活火祸获豁货霍;ji:伎冀几击剂即及吉圾基妓姬嫉季寂寄己忌急悸技挤既机极棘汲济激畸疾祭积稽箕籍系级纪继绩缉肌脊蓟计讥记辑迹际集饥鸡;jia:价伽佳假加嘉夹嫁家架枷甲稼荚贾钾颊驾;jian:件俭健兼减剑剪坚奸尖建拣捡柬检歼涧渐溅煎监硷碱笺简箭缄肩舰艰茧荐见贱践鉴键间饯;jiang:僵匠奖姜将强桨江浆疆蒋讲酱降;jiao:交侥剿叫嚼娇搅教椒浇焦狡矫礁窖绞缴胶脚蕉角轿较郊酵铰饺骄;jie:介借劫姐届戒截捷接揭杰洁界疥皆睫秸竭结节芥藉街解诫阶;jin:仅今劲尽巾斤晋津浸烬禁筋紧襟谨近进金锦靳;jing:井京兢净境径惊敬景晶痉睛竞竟粳精经茎荆警镜靖静颈鲸;jiong:炯窘;jiu:久九厩咎就揪救旧灸玖疚究纠臼舅酒韭;ju:举俱具剧句局居巨惧拒拘据桔沮炬狙疽矩聚菊距踞锯鞠驹;juan:倦卷圈娟捐眷绢鹃;jue:倔决抉掘撅攫爵绝觉角诀;jun:俊军君均峻浚竣菌郡钧骏;ka:卡咖喀;kai:凯开慨揩楷;kan:刊勘坎堪槛看砍;kang:亢康慷扛抗炕糠;kao:拷烤考靠;ke:克刻可坷壳客柯棵渴磕科苛课颗;ken:啃垦恳肯;keng:吭坑;kong:孔恐控空;kou:口寇扣抠;ku:哭库枯窟苦裤酷;kua:垮夸挎胯跨;kuai:会侩块快筷;kuan:宽款;kuang:况匡旷框狂眶矿筐;kui:亏傀奎岿愧溃盔窥葵馈魁;kun:困坤捆昆;kuo:廓扩括阔;la:啦喇垃拉腊蜡辣;lai:来莱赖;lan:兰婪懒拦揽栏滥澜烂篮缆蓝览谰阑;lang:廊朗榔浪狼琅郎;lao:佬劳姥捞涝烙牢老酪;le:乐了勒;lei:儡垒擂泪磊类累肋蕾镭雷;leng:冷棱楞;li:丽例俐傈利力励历厉厘吏哩李栗梨沥漓犁狸理璃痢砾礼离立篱粒荔莉里隶鲤黎;lia:俩;lian:帘廉怜恋敛涟炼练联脸莲连链镰;liang:两亮凉晾梁粮粱良谅辆量;liao:了僚寥廖撂撩料潦燎疗聊辽镣;lie:列劣烈猎裂;lin:临凛吝拎林淋琳磷赁邻霖鳞;ling:令伶凌另岭灵玲羚菱铃陵零领龄;liu:六刘柳榴流溜琉留瘤硫馏;long:咙垄拢窿笼聋陇隆龙;lou:娄搂楼漏篓陋;lu:卢卤庐录戮掳潞炉碌禄芦虏赂路陆露颅鲁鹿麓;luan:乱卵孪峦挛滦;lun:仑伦抡沦纶论轮;luo:洛箩络罗萝落螺裸逻锣骆骡;lv:侣吕屡履律旅氯滤率绿缕虑铝驴;lve:掠略;ma:吗嘛妈玛码蚂马骂麻;mai:买卖埋脉迈麦;man:慢曼满漫瞒蔓蛮谩馒;mang:忙氓盲芒茫莽;mao:冒卯帽毛猫矛茂茅貌贸铆锚;me:么;mei:妹媒媚寐昧枚梅每没煤玫眉美酶镁霉;men:们门闷;meng:孟梦檬猛盟萌蒙锰;mi:密幂弥泌眯秘米糜蜜觅谜迷醚靡;mian:免冕勉娩棉眠绵缅面;miao:妙庙描渺瞄秒缪苗藐;mie:灭蔑;min:悯抿敏民皿闽;ming:名命明螟铭鸣;miu:缪谬;mo:墨寞抹摩摸摹末模没沫漠磨膜莫蘑貉陌魔默;mou:某缪谋;mu:亩募墓姆幕慕拇暮木模母牟牡牧目睦穆;na:呐哪娜拿纳那钠;nai:乃奈奶氖耐;nan:南男难;nang:囊;nao:恼挠淖脑闹;ne:呢;nei:内馁;nen:嫩;neng:能;ni:你倪匿妮尼拟泥溺腻逆霓;nian:年念拈捻撵碾粘蔫辗;niang:娘酿;niao:尿鸟;nie:啮孽捏涅聂镊镍;nin:您;ning:凝宁拧柠泞狞;niu:扭牛纽钮;nong:农弄浓脓;nu:努奴怒;nuan:暖;nuo:懦挪糯诺;nv:女;nve:疟虐;o:哦;ou:偶呕欧殴沤藕鸥;pa:啪帕怕爬琶耙趴;pai:徘拍排派湃牌;pan:判叛攀潘畔盘盼磐;pang:乓庞旁耪胖;pao:刨咆抛泡炮袍跑;pei:佩呸培沛胚裴赔配陪;pen:喷盆;peng:彭抨捧朋棚澎烹砰硼碰篷膨蓬鹏;pi:僻劈匹啤坯屁批披毗琵疲痞皮砒脾譬辟霹;pian:偏片篇骗;piao:漂瓢票飘;pie:撇瞥;pin:品拼聘贫频;ping:乒凭坪屏平瓶苹萍评;po:坡婆泼破粕迫颇魄;pou:剖;pu:仆圃埔扑普曝朴浦瀑脯莆菩葡蒲谱铺;qi:七乞企其凄启器奇契妻岂崎弃戚旗期柒栖棋欺歧气汽沏泣漆畦砌祁祈脐讫起迄骑齐;qia:恰掐洽;qian:乾仟前千堑嵌扦欠歉浅潜牵签谦谴迁遣钎钱钳铅黔;qiang:呛墙强抢枪羌腔蔷;qiao:乔侨俏壳峭巧悄撬敲桥橇瞧窍翘锹鞘;qie:且切怯窃茄;qin:亲侵勤寝擒沁琴禽秦芹钦;qing:倾卿庆情擎晴氢氰清请轻青顷;qiong:琼穷;qiu:丘囚求泅球秋邱酋;qu:区去取娶屈曲渠蛆趋趣躯驱龋;quan:全券劝圈拳权泉犬痊醛颧;que:却榷炔瘸确缺雀鹊;qun:群裙;ran:冉染然燃;rang:嚷壤攘瓤让;rao:扰绕饶;re:惹热;ren:人仁任刃壬妊忍纫认韧;reng:仍扔;ri:日;rong:冗容戎溶熔绒茸荣蓉融;rou:揉柔肉;ru:乳儒入如孺汝茹蠕褥辱;ruan:软阮;rui:瑞蕊锐;run:润闰;ruo:弱若;sa:撒洒萨;sai:塞腮赛鳃;san:三伞叁散;sang:丧嗓桑;sao:嫂扫搔骚;se:涩瑟色;sen:森;seng:僧;sha:傻厦啥杀沙煞砂纱莎;shai:晒筛;shan:删善山扇擅杉栅汕煽珊缮膳苫衫赡闪陕;shang:上伤商墒尚晌裳赏;shao:勺哨少捎梢烧稍绍芍邵韶;she:奢射慑折摄涉社舌舍蛇设赊赦;shen:什伸参呻娠婶审慎沈深渗甚申砷神绅肾身;sheng:乘剩升圣声牲生甥盛省绳胜;shi:世事什仕似使侍势十史嗜噬士失始实室尸屎市师式恃拭拾施时是柿氏湿狮矢石示虱蚀视誓识试诗适逝释食饰驶;shou:兽受售守寿手授收瘦首;shu:书叔墅孰属庶恕戍抒数暑曙术束枢树梳殊淑漱熟疏竖署舒蔬薯蜀赎输述黍鼠;shua:刷耍;shuai:帅摔率甩衰;shuan:拴栓;shuang:双爽霜;shui:水睡税谁;shun:吮瞬舜顺;shuo:朔烁硕说;si:丝伺似司嗣嘶四寺巳思撕斯死私肆饲;song:宋怂松耸讼诵送颂;sou:嗽搜擞艘;su:俗僳塑宿溯粟素肃苏诉速酥;suan:算蒜酸;sui:岁碎祟穗绥虽遂隋随隧髓;sun:孙损笋;suo:唆所梭琐索缩蓑锁;ta:他塌塔她它挞獭踏蹋;tai:台太态抬汰泰胎苔酞;tan:叹坍坛坦弹探摊檀毯滩潭炭痰瘫碳袒谈谭贪;tang:倘唐堂塘搪棠汤淌烫糖膛趟躺;tao:套掏桃涛淘滔绦萄讨逃陶;te:特;teng:疼腾藤誊;ti:体剃剔啼嚏屉惕提替梯涕踢蹄锑题;tian:填天恬添甜田腆舔;tiao:挑条眺调跳迢;tie:帖贴铁;ting:亭停厅听庭廷挺汀烃艇;tong:同彤捅桐桶痛瞳童筒统通酮铜;tou:偷头投透;tu:兔凸吐图土屠徒涂秃突途;tuan:团湍;tui:推腿蜕褪退颓;tun:吞囤屯臀;tuo:唾妥托拓拖椭脱陀驮驼鸵;wa:哇娃挖洼瓦蛙袜;wai:外歪;wan:万丸婉完宛弯惋挽晚湾烷玩皖碗腕豌顽;wang:亡妄往忘旺望枉汪王网;wei:为伟伪位卫危味唯喂围委威尉尾巍微惟慰未桅渭潍畏纬维胃苇萎蔚谓违韦魏;wen:吻文温瘟稳紊纹蚊问闻;weng:嗡瓮翁;wo:卧我挝握斡沃涡窝蜗;wu:乌五伍侮务勿午吴吾呜坞屋巫悟戊捂无晤梧武毋污物舞芜诬误钨雾;xi:习吸喜嘻夕媳希席息悉惜戏昔晰析檄汐洗溪烯熄熙牺犀矽硒稀系细膝袭西锡隙;xia:下侠匣吓夏峡暇狭瞎虾辖霞;xian:仙先县咸嫌宪弦掀显涎献现纤线羡腺舷衔贤铣锨闲限险陷馅鲜;xiang:乡享像厢向响巷想橡湘相祥箱翔襄详象镶降项香;xiao:削哮啸孝宵小效晓校消淆硝笑肖萧销霄;xie:些写协卸屑懈挟携斜械楔歇泄泻胁蝎蟹血解谐谢邪鞋;xin:信心忻新欣芯薪衅辛锌;xing:兴刑型姓幸形性惺星杏猩省腥行邢醒;xiong:兄凶匈汹熊胸雄;xiu:休修嗅朽秀绣羞袖锈;xu:叙吁嘘墟婿序徐恤戌旭絮绪续蓄虚许酗需须;xuan:喧宣悬旋玄癣眩绚轩选;xue:削学穴薛血雪靴;xun:勋寻巡循旬殉汛熏训讯询迅逊驯;ya:丫亚压呀哑崖押涯牙芽蚜衙讶轧雅鸦鸭;yan:严厌咽唁堰奄宴岩延彦掩沿淹演炎烟焉焰燕盐眼研砚艳蜒衍言谚阉阎雁颜验;yang:仰佯养央扬杨样殃氧洋漾疡痒秧羊阳鸯;yao:咬妖姚尧摇瑶窑耀腰舀药要谣遥邀钥;ye:业也冶叶噎夜掖曳椰液爷耶腋野页;yi:一义乙亦亿以仪伊依倚医壹夷姨宜屹已异彝役忆意抑揖易椅毅沂溢疑疫益矣移绎翌翼肄胰臆艺蚁衣裔议译诣谊逸遗邑铱颐;yin:印吟因姻寅尹引殷淫茵荫银阴隐音饮;ying:婴应影映樱盈硬缨英荧莹萤营蝇赢迎颖鹰;yo:哟;yong:佣勇咏庸恿拥永泳涌用痈臃蛹踊雍;you:优佑又友右尤幼幽忧悠有油游犹由诱邮酉釉铀;yu:与予于余俞喻域娱宇寓屿峪御愈愉愚榆欲浴淤渔渝狱玉盂禹羽育舆芋虞裕誉语豫迂逾遇郁隅雨预驭鱼;yuan:元冤原员园圆垣怨愿援渊源猿缘苑袁辕远院鸳;yue:乐岳悦曰月粤约越跃阅;yun:云允匀孕晕耘蕴运郧酝陨韵;za:匝咋杂砸;zai:仔再哉在宰栽灾载;zan:咱攒暂赞;zang:脏葬藏赃;zao:凿噪早枣澡灶燥皂糟藻蚤躁造遭;ze:则择泽责;zei:贼;zen:怎;zeng:增憎赠;zha:乍喳扎札柞榨渣炸眨诈铡闸;zhai:债宅寨摘斋窄翟;zhan:占展崭战斩栈毡沾湛盏瞻站绽蘸詹;zhang:丈仗帐张彰掌杖樟涨漳瘴章胀账长障;zhao:兆召找招昭沼照着罩肇赵;zhe:哲折浙着者蔗蛰辙这遮锗;zhen:侦帧振斟枕珍甄疹真砧臻诊贞针镇阵震;zheng:争征怔拯挣政整正狰症睁蒸证郑;zhi:之侄值制只吱址峙帜志执指挚掷支旨智枝植止殖汁治滞炙痔直知秩稚窒纸织置职肢脂至致芝蜘质趾;zhong:中仲众忠盅种终肿衷重钟;zhou:周咒宙州帚昼洲皱粥肘舟诌轴骤;zhu:主住助嘱拄朱柱株注烛煮猪珠瞩祝竹筑著蛀蛛诛诸贮逐铸驻;zhua:抓爪;zhuai:拽;zhuan:专传撰砖篆赚转;zhuang:壮妆幢庄撞桩状装;zhui:坠椎缀赘追锥;zhun:准谆;zhuo:卓啄拙捉桌浊灼琢着茁酌;zi:兹咨姿子字孜淄渍滋滓籽紫自资;zong:宗总棕纵综踪鬃;zou:奏揍走邹;zu:卒族祖租组诅足阻;zuan:纂钻;zui:咀嘴最罪醉;zun:尊遵;zuo:佐作做坐左座昨";
+/*PINYIN_TABLE_END*/
+
+const PINYIN_EXACT = 7;
+const PINYIN_PREFIX = 6;
+const PINYIN_INITIALS = 5;
+const PINYIN_INITIALS_PREFIX = 4;
+
+let PINYIN_OF = null;
+
+function pinyinMap() {
+  if (PINYIN_OF) return PINYIN_OF;
+  const map = Object.create(null);
+  for (const part of PINYIN_TABLE.split(";")) {
+    if (!part) continue;
+    const colon = part.indexOf(":");
+    if (colon <= 0) continue;
+    const syl = part.slice(0, colon);
+    for (const ch of part.slice(colon + 1)) {
+      if (!map[ch]) map[ch] = [syl];
+      else if (!map[ch].includes(syl)) map[ch].push(syl);
+    }
+  }
+  PINYIN_OF = map;
+  return map;
+}
+
+function attachPinyin(e) {
+  const map = pinyinMap();
+  const seqs = [];
+  const texts = [e.name];
+  if (e.aliases) {
+    for (const alias of e.aliases) texts.push(alias);
+  }
+  for (const text of texts) {
+    const chars = [];
+    let ok = true;
+    for (const ch of text || "") {
+      const code = ch.codePointAt(0);
+      if (code < 0x3400 || code > 0x9fff) continue;
+      const reads = map[ch];
+      if (!reads) { ok = false; break; }
+      chars.push(reads);
+    }
+    if (ok && chars.length) seqs.push(chars);
+  }
+  if (e.pinyinOverride && e.pinyinOverride.length) seqs.push(e.pinyinOverride.map((syl) => [syl]));
+  e.pySeqs = seqs;
+}
+
+// Full pinyin, a prefix that may stop mid-syllable, or consonant initials.
+// Scores stay under the keyword bonus (8) so `frac` / `int` are unchanged,
+// and above a loose hay substring so the pinyin hit is not buried.
+function scorePinyinSequence(seq, term) {
+  return Math.max(syllableScore(seq, term), initialsScore(seq, term));
+}
+
+function syllableScore(seq, term) {
+  let best = 0;
+  function walk(ci, qi) {
+    if (best === PINYIN_EXACT) return;
+    if (qi === term.length) {
+      best = Math.max(best, ci === seq.length ? PINYIN_EXACT : PINYIN_PREFIX);
+      return;
+    }
+    if (ci >= seq.length) return;
+    const rest = term.slice(qi);
+    for (const syl of seq[ci]) {
+      if (rest.startsWith(syl)) walk(ci + 1, qi + syl.length);
+      else if (rest.length < syl.length && syl.startsWith(rest)) best = Math.max(best, PINYIN_PREFIX);
+    }
+  }
+  walk(0, 0);
+  return best;
+}
+
+function initialsScore(seq, term) {
+  if (term.length < 2 || term.length > seq.length) return 0;
+  if (!/^[bcdfghjklmnpqrstwxyz]+$/.test(term)) return 0;
+  function walk(ci, qi) {
+    if (qi === term.length) {
+      return term.length === seq.length ? PINYIN_INITIALS : PINYIN_INITIALS_PREFIX;
+    }
+    if (ci >= seq.length) return 0;
+    const ch = term[qi];
+    for (const syl of seq[ci]) {
+      if (syl[0] === ch) return walk(ci + 1, qi + 1);
+    }
+    return 0;
+  }
+  return walk(0, 0);
+}
+
+function pinyinTermScore(entry, term) {
+  if (!entry.pySeqs || term.length < 2 || !/^[a-z]+$/.test(term)) return 0;
+  let best = 0;
+  for (const seq of entry.pySeqs) {
+    best = Math.max(best, scorePinyinSequence(seq, term));
+    if (best === PINYIN_EXACT) return best;
+  }
+  return best;
+}
+
+function finalizeEntry(e) {
+  if (e.en === undefined || e.en === null) {
+    const leading = [];
+    for (const word of (e.keys || "").split(/\s+/)) {
+      if (!/^[A-Za-z][A-Za-z-]*$/.test(word) || leading.length === 2) break;
+      leading.push(word);
+    }
+    e.en = leading.join(" ");
+  }
+  if (!Array.isArray(e.aliases)) e.aliases = [];
+  e.nameLc = (e.name || "").toLowerCase();
+  e.enLc = (e.en || "").toLowerCase();
+  e.texLc = (e.tex || "").toLowerCase();
+  e.aliasLc = e.aliases.map((alias) => alias.toLowerCase());
+  const baseTokens = (e.keys || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (e.aliases.length === 0) {
+    e.keyTokens = baseTokens;
+  } else {
+    const extra = e.aliases.join(" ").toLowerCase().split(/\s+/).filter(Boolean);
+    e.keyTokens = baseTokens.concat(extra.filter((token) => !baseTokens.includes(token)));
+  }
+  e.hay = `${e.name} ${e.en} ${e.keys} ${e.cat} ${e.tex}`.toLowerCase();
+  if (e.aliases.length) e.hay += ` ${e.aliases.join(" ").toLowerCase()}`;
+  if (!e.id) e.id = e.user ? `user:${e.name}\0${e.tex}` : `builtin:${e.cat}/${e.name}`;
+  attachPinyin(e);
+  return e;
+}
+
+function disambiguateIds(entries) {
+  const seen = new Map();
+  for (const e of entries) {
+    if (!e.id) continue;
+    const n = seen.get(e.id) || 0;
+    seen.set(e.id, n + 1);
+    if (n > 0) e.id = `${e.id}#${n + 1}`;
+  }
+  return entries;
+}
+
 function buildEntries() {
   const entries = [];
   for (const line of DATA.split("\n")) {
@@ -1357,25 +1616,12 @@ function buildEntries() {
     known.add(tex);
     entries.push({ cat: "命令", name, en: "", keys: name.replace(/^\\/, ""), tex, extra: true });
   }
-  for (const e of entries) {
-    if (e.en === undefined) {
-      const leading = [];
-      for (const word of e.keys.split(/\s+/)) {
-        if (!/^[A-Za-z][A-Za-z-]*$/.test(word) || leading.length === 2) break;
-        leading.push(word);
-      }
-      e.en = leading.join(" ");
-    }
-    e.nameLc = e.name.toLowerCase();
-    e.enLc = (e.en || "").toLowerCase();
-    e.texLc = e.tex.toLowerCase();
-    e.keyTokens = (e.keys || "").toLowerCase().split(/\s+/).filter(Boolean);
-    e.hay = `${e.name} ${e.en} ${e.keys} ${e.cat} ${e.tex}`.toLowerCase();
-  }
+  for (const e of entries) finalizeEntry(e);
+  disambiguateIds(entries);
   return entries;
 }
 
-const ENTRIES = buildEntries();
+let ENTRIES = buildEntries();
 
 function appendHighlighted(parent, text, query) {
   const terms = query.trim().toLowerCase().split(/\s+/).filter((term) => term.length > 0);
@@ -1425,10 +1671,58 @@ function labelBonus(label, term) {
   return 0;
 }
 
-function search(query, allowFuzzy = true, includeExtra = true) {
-  const q = query.trim().toLowerCase();
-  const pool = includeExtra ? ENTRIES : ENTRIES.filter((e) => !e.extra);
-  if (!q) return pool;
+function rankEmpty(pool, usage) {
+  if (!usage) return pool;
+  let any = false;
+  for (const id in usage) {
+    if (usage[id] > 0) { any = true; break; }
+  }
+  if (!any) return pool;
+  return pool
+    .map((e, i) => ({ e, i, u: e.id && usage[e.id] ? usage[e.id] : 0 }))
+    .sort((a, b) => b.u - a.u || a.i - b.i)
+    .map((row) => row.e);
+}
+
+// Usage can raise a row, but not from at-or-below an exact name/alias match to
+// at-or-above that match. With an empty usage map every bonus is zero, so scores
+// stay equal to the historical base score.
+function applyUsage(scored, usage) {
+  const rows = scored.map((s) => {
+    const count = usage && s.e.id ? usage[s.e.id] || 0 : 0;
+    const bonus = usageBonus(count);
+    return { ...s, usage: count, bonus, score: s.base + bonus };
+  });
+  const exacts = rows.filter((s) => s.exactName);
+  if (exacts.length === 0) return rows;
+  for (const row of rows) {
+    if (row.exactName) continue;
+    let score = row.score;
+    for (const ex of exacts) {
+      const exScore = ex.base + ex.bonus;
+      if (row.base <= ex.base && score >= exScore) score = Math.min(score, exScore - 1e-4);
+    }
+    if (score < row.base) score = row.base;
+    row.score = score;
+  }
+  return rows;
+}
+
+function compareRank(a, b) {
+  if (a.score !== b.score) return b.score - a.score;
+  if ((a.usage || b.usage) && a.exactName !== b.exactName) return a.exactName ? -1 : 1;
+  if (a.usage !== b.usage) return b.usage - a.usage;
+  return 0;
+}
+
+function searchEntries(entries, query, options = {}) {
+  const allowFuzzy = options.allowFuzzy !== false;
+  const includeExtra = options.includeExtra !== false;
+  const usage = options.usage || null;
+  const pool = includeExtra ? entries : entries.filter((e) => !e.extra);
+  const raw = (query || "").trim();
+  const q = raw.toLowerCase();
+  if (!q) return rankEmpty(pool, usage);
 
   const terms = q.split(/\s+/);
   const scored = [];
@@ -1436,34 +1730,384 @@ function search(query, allowFuzzy = true, includeExtra = true) {
     let score = e.extra ? -12 : 0;
     let ok = true;
     let commandPrefix = false;
+    let exactName = e.nameLc === q || (!!e.enLc && e.enLc === q);
+    let aliasExact = false;
+    if (e.aliasLc) {
+      for (const alias of e.aliasLc) {
+        if (alias === q) {
+          exactName = true;
+          aliasExact = true;
+        }
+      }
+    }
+    // A multi-word alias is not covered by the per-term exact bonus. Name and
+    // English label keep their historical per-term scores.
+    if (aliasExact && q.includes(" ") && e.nameLc !== q && e.enLc !== q) score += 50;
     for (const term of terms) {
       const idx = e.hay.indexOf(term);
-      if (idx < 0) { ok = false; break; }
+      // Pinyin is not stored in hay: a mid-word substring would drown 实数集 under
+      // unrelated Latin hits. It only fills a term the hay does not contain.
+      if (idx < 0) {
+        const py = pinyinTermScore(e, term);
+        if (!py) { ok = false; break; }
+        score += py;
+        continue;
+      }
       const nameScore = Math.max(labelBonus(e.nameLc, term), labelBonus(e.enLc, term));
-      score += nameScore;
+      let aliasScore = 0;
+      if (e.aliasLc) {
+        for (const alias of e.aliasLc) aliasScore = Math.max(aliasScore, labelBonus(alias, term));
+      }
+      const best = Math.max(nameScore, aliasScore);
+      if (best === 50) exactName = true;
+      score += best;
       const keyAt = e.keyTokens.indexOf(term);
       if (keyAt === 0) score += 30;
       else if (keyAt > 0) score += 8;
       if (e.texLc.startsWith(term) || e.texLc.startsWith("\\" + term)) {
         score += 15;
         commandPrefix = true;
-      } else if (nameScore === 0 && keyAt < 0) score -= idx * 0.01;
+      } else if (best === 0 && keyAt < 0) score -= idx * 0.01;
     }
     // Whole-query command prefix. Skip when a term already scored that prefix,
     // so "partial" is not counted twice against \partial.
-    if (ok && !commandPrefix && e.tex.startsWith("\\" + query.trim())) score += 8;
-    if (ok) scored.push({ e, score: score - e.tex.length * 0.001 });
+    if (ok && !commandPrefix && e.tex.startsWith("\\" + raw)) score += 8;
+    if (ok) scored.push({ e, base: score - e.tex.length * 0.001, exactName });
   }
 
   if (scored.length === 0 && allowFuzzy) {
     const fuzzy = prepareFuzzySearch(q);
     for (const e of pool) {
       const r = fuzzy(e.hay);
-      if (r) scored.push({ e, score: r.score });
+      if (r) scored.push({ e, base: r.score, exactName: false });
     }
   }
 
-  return scored.sort((a, b) => b.score - a.score).map((s) => s.e);
+  return applyUsage(scored, usage).sort(compareRank).map((s) => s.e);
+}
+
+function search(query, allowFuzzy = true, includeExtra = true) {
+  return searchEntries(ENTRIES, query, { allowFuzzy, includeExtra, usage: usageCounts });
+}
+
+function readDollar(tex, i) {
+  let j = i + 1;
+  if (j >= tex.length) return null;
+  if (tex[j] === "{") {
+    j++;
+    const start = j;
+    if (j < tex.length && tex[j] === "0" && (j + 1 >= tex.length || !/\d/.test(tex[j + 1]))) {
+      j++;
+    } else if (j < tex.length && /[1-9]/.test(tex[j])) {
+      j++;
+      while (j < tex.length && /\d/.test(tex[j])) j++;
+    } else {
+      return null;
+    }
+    const n = Number(tex.slice(start, j));
+    if (tex[j] === "}") return { n, def: "", next: j + 1 };
+    if (tex[j] !== ":") return null;
+    j++;
+    let def = "";
+    while (j < tex.length) {
+      if (tex[j] === "\\" && j + 1 < tex.length) {
+        const nxt = tex[j + 1];
+        if (nxt === "\\") {
+          def += "\\";
+          j += 2;
+          continue;
+        }
+        if (nxt === "}") {
+          def += "}";
+          j += 2;
+          continue;
+        }
+        def += tex[j] + nxt;
+        j += 2;
+        continue;
+      }
+      if (tex[j] === "}") return { n, def, next: j + 1 };
+      def += tex[j];
+      j++;
+    }
+    return { error: "unclosed" };
+  }
+  if (tex[j] === "0" && (j + 1 >= tex.length || !/\d/.test(tex[j + 1]))) {
+    return { n: 0, def: "", next: j + 1 };
+  }
+  if (/[1-9]/.test(tex[j])) {
+    const start = j;
+    j++;
+    while (j < tex.length && /\d/.test(tex[j])) j++;
+    return { n: Number(tex.slice(start, j)), def: "", next: j };
+  }
+  return null;
+}
+
+function hasDollarStops(tex) {
+  for (let i = 0; i < tex.length; i++) {
+    if (tex[i] === "\\" && i + 1 < tex.length) {
+      i++;
+      continue;
+    }
+    if (tex[i] === "$" && readDollar(tex, i)) return true;
+  }
+  return false;
+}
+
+function expandUserTemplate(tex) {
+  let text = "";
+  const stops = [];
+  let exit = null;
+  for (let i = 0; i < tex.length; i++) {
+    const ch = tex[i];
+    if (ch === "\\" && i + 1 < tex.length) {
+      text += ch + tex[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === "$") {
+      const parsed = readDollar(tex, i);
+      if (parsed && parsed.error) return { error: parsed.error };
+      if (parsed) {
+        if (parsed.n === 0) {
+          text += parsed.def;
+          if (exit === null) exit = text.length;
+        } else {
+          const from = text.length;
+          text += parsed.def;
+          stops.push({ n: parsed.n, from, to: text.length });
+        }
+        i = parsed.next - 1;
+        continue;
+      }
+    }
+    text += ch;
+  }
+  stops.sort((a, b) => a.n - b.n || a.from - b.from);
+  return {
+    text,
+    stops: stops.map((stop) => [stop.from, stop.to]),
+    exit: exit === null ? text.length : exit,
+  };
+}
+
+function parseAliasLine(line, lineNo) {
+  const body = line.slice(1).trim();
+  const sep = body.indexOf(" ;; ");
+  if (sep < 0) return { error: { line: lineNo, code: "empty-alias", target: body } };
+  const target = body.slice(0, sep).trim();
+  const parts = body.slice(sep + 4).split("|").map((s) => s.trim()).filter(Boolean);
+  if (!target || parts.length === 0) return { error: { line: lineNo, code: "empty-alias", target } };
+  return { alias: { line: lineNo, target, parts } };
+}
+
+function parseEntryLine(line, lineNo) {
+  const parts = line.split(" ;; ").map((s) => s.trim());
+  let cat = "自定义";
+  let name;
+  let keys;
+  let tex;
+  let en;
+  if (parts.length === 3) {
+    [name, keys, tex] = parts;
+  } else if (parts.length === 4) {
+    [name, keys, tex, en] = parts;
+  } else if (parts.length === 5) {
+    [cat, name, keys, tex, en] = parts;
+  } else {
+    return { error: { line: lineNo, code: "bad-entry" } };
+  }
+  if (!name) return { error: { line: lineNo, code: "empty-name" } };
+  if (!tex) return { error: { line: lineNo, code: "empty-tex" } };
+  if (hasDollarStops(tex)) {
+    const expanded = expandUserTemplate(tex);
+    if (expanded.error) return { error: { line: lineNo, code: "bad-placeholder", detail: expanded.error } };
+  }
+  return {
+    entry: finalizeEntry({
+      cat: cat || "自定义",
+      name,
+      keys: keys || "",
+      tex,
+      en,
+      user: true,
+      extra: false,
+      aliases: [],
+    }),
+  };
+}
+
+function parseDictionary(text) {
+  const entries = [];
+  const aliases = [];
+  const pinyins = [];
+  const errors = [];
+  const lines = String(text || "").replace(/^\uFEFF/, "").split(/\r?\n/);
+  let fence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const lineNo = i + 1;
+    const line = lines[i].trim();
+    if (/^```/.test(line)) {
+      fence = !fence;
+      continue;
+    }
+    if (fence || !line || line.startsWith("#")) continue;
+    if (line.startsWith("+")) {
+      const parsed = parseAliasLine(line, lineNo);
+      if (parsed.error) errors.push(parsed.error);
+      else aliases.push(parsed.alias);
+      continue;
+    }
+    if (line.startsWith("~")) {
+      const parsed = parsePinyinLine(line, lineNo);
+      if (parsed.error) errors.push(parsed.error);
+      else pinyins.push(parsed.pinyin);
+      continue;
+    }
+    if (!line.includes(" ;; ")) continue;
+    const parsed = parseEntryLine(line, lineNo);
+    if (parsed.error) errors.push(parsed.error);
+    else entries.push(parsed.entry);
+  }
+  if (fence) errors.push({ line: lines.length || 1, code: "unclosed-fence" });
+  return { entries, aliases, pinyins, errors };
+}
+
+function parsePinyinLine(line, lineNo) {
+  const body = line.slice(1).trim();
+  const sep = body.indexOf(" ;; ");
+  if (sep < 0) return { error: { line: lineNo, code: "bad-pinyin", target: body } };
+  const target = body.slice(0, sep).trim();
+  const syllables = body.slice(sep + 4).toLowerCase().split(/[\s|/]+/).map((s) => s.trim()).filter(Boolean);
+  if (!target || syllables.length === 0 || syllables.some((syl) => !/^[a-z]+$/.test(syl))) {
+    return { error: { line: lineNo, code: "bad-pinyin", target } };
+  }
+  return { pinyin: { line: lineNo, target, syllables } };
+}
+
+function findAliasTargets(entries, target) {
+  const t = target.trim();
+  const idHits = entries.filter((e) => e.id === t);
+  if (idHits.length === 1) return { matches: idHits, ambiguous: false };
+  if (idHits.length > 1) return { matches: idHits, ambiguous: true };
+  const lc = t.toLowerCase();
+  const matches = entries.filter((e) =>
+    e.name === t || (!!e.en && e.en.toLowerCase() === lc) || e.tex === t);
+  return { matches, ambiguous: matches.length > 1 };
+}
+
+function entryProblemLabel(e) {
+  const en = e.en && e.en !== e.name ? `, ${e.en}` : "";
+  return `${e.name}${en} [${e.id}]`;
+}
+
+function addAliasParts(entry, parts) {
+  if (!entry.aliases) entry.aliases = [];
+  for (const alias of parts) {
+    const dup = entry.aliases.some((have) => have.toLowerCase() === alias.toLowerCase());
+    if (!dup) entry.aliases.push(alias);
+  }
+  finalizeEntry(entry);
+}
+
+function applyAliases(entries, aliases) {
+  const errors = [];
+  for (const alias of aliases) {
+    const found = findAliasTargets(entries, alias.target);
+    if (found.matches.length === 0) {
+      errors.push({ line: alias.line, code: "alias-not-found", target: alias.target });
+      continue;
+    }
+    if (found.ambiguous) {
+      errors.push({
+        line: alias.line,
+        code: "ambiguous",
+        target: alias.target,
+        names: found.matches.map(entryProblemLabel),
+      });
+      continue;
+    }
+    addAliasParts(found.matches[0], alias.parts);
+  }
+  return errors;
+}
+
+function applyPinyinOverrides(entries, overrides) {
+  const errors = [];
+  for (const ov of overrides || []) {
+    const found = findAliasTargets(entries, ov.target);
+    if (found.matches.length === 0) {
+      errors.push({ line: ov.line, code: "pinyin-not-found", target: ov.target });
+      continue;
+    }
+    if (found.ambiguous) {
+      errors.push({
+        line: ov.line,
+        code: "ambiguous",
+        target: ov.target,
+        names: found.matches.map(entryProblemLabel),
+      });
+      continue;
+    }
+    found.matches[0].pinyinOverride = ov.syllables;
+    attachPinyin(found.matches[0]);
+  }
+  return errors;
+}
+
+function rebuildFromDictionary(text) {
+  const parsed = parseDictionary(text);
+  const entries = buildEntries().concat(parsed.entries);
+  disambiguateIds(entries);
+  const aliasErrors = applyAliases(entries, parsed.aliases);
+  const pinyinErrors = applyPinyinOverrides(entries, parsed.pinyins);
+  return { entries, errors: parsed.errors.concat(aliasErrors, pinyinErrors) };
+}
+
+function formatDictionaryProblem(error, lang) {
+  const zh = lang === "zh";
+  const line = zh ? `第 ${error.line} 行` : `Line ${error.line}`;
+  switch (error.code) {
+    case "bad-entry":
+      return zh
+        ? `${line}：格式应为「名称 ;; 关键词 ;; LaTeX」`
+        : `${line}: expected "name ;; keywords ;; tex"`;
+    case "empty-name":
+      return zh ? `${line}：名称为空` : `${line}: name is empty`;
+    case "empty-tex":
+      return zh ? `${line}：LaTeX 为空` : `${line}: LaTeX is empty`;
+    case "bad-placeholder":
+      return zh ? `${line}：占位符没有闭合` : `${line}: unclosed placeholder`;
+    case "unclosed-fence":
+      return zh ? `${line}：代码块没有闭合，块内的条目不会生效` : `${line}: code fence is not closed, so lines inside it were skipped`;
+    case "empty-alias":
+      return zh
+        ? `${line}：别名行应为「+目标 ;; 别名」`
+        : `${line}: alias line should look like "+target ;; alias"`;
+    case "bad-pinyin":
+      return zh
+        ? `${line}：拼音行应为「~目标 ;; pin yin」`
+        : `${line}: pinyin line should look like "~target ;; pin yin"`;
+    case "pinyin-not-found":
+      return zh
+        ? `${line}：找不到要标注拼音的「${error.target}」`
+        : `${line}: no entry matches pinyin target "${error.target}"`;
+    case "alias-not-found":
+      return zh
+        ? `${line}：找不到「${error.target}」`
+        : `${line}: no entry matches "${error.target}"`;
+    case "ambiguous":
+      return zh
+        ? `${line}：「${error.target}」匹配到多条（${(error.names || []).join("、")}），请改用名称或 id`
+        : `${line}: "${error.target}" matches more than one entry (${(error.names || []).join(", ")}); use the name or id`;
+    default:
+      return `${line}: ${error.code}`;
+  }
+}
+
+function isDictPath(path) {
+  return path === DICT_PATH;
 }
 
 const CATEGORY_EN = {
@@ -1484,6 +2128,7 @@ const CATEGORY_EN = {
   "概率": "Probability",
   "希腊字母": "Greek",
   "命令": "Commands",
+  "自定义": "Custom",
 };
 
 function displayLabels(entry, lang) {
@@ -1737,9 +2382,7 @@ function deriveStops(tex) {
   return stops.sort((a, b) => a[0] - b[0]);
 }
 
-function expandSnippet(tex, isExtra) {
-  if (!isExtra) return { text: tex, stops: deriveStops(tex), exit: tex.length };
-
+function expandExtraSnippet(tex) {
   let text = "";
   const stops = [];
   let exit = null;
@@ -1757,6 +2400,20 @@ function expandSnippet(tex, isExtra) {
     }
   }
   return { text, stops, exit: exit === null ? text.length : exit };
+}
+
+function expandSnippet(tex, isExtra, isUser) {
+  if (isExtra) return expandExtraSnippet(tex);
+  if (isUser && hasDollarStops(tex)) {
+    const expanded = expandUserTemplate(tex);
+    if (!expanded.error) return { text: expanded.text, stops: expanded.stops, exit: expanded.exit };
+  }
+  return { text: tex, stops: deriveStops(tex), exit: tex.length };
+}
+
+function snippetFor(entry, mode) {
+  const source = mode === "display" ? entry.tex : entry.tex.replace(/\s*\n\s*/g, " ");
+  return expandSnippet(source, !!entry.extra, !!entry.user);
 }
 
 const setSnippet = StateEffect.define();
@@ -1802,10 +2459,21 @@ const snippetField = StateField.define({
   },
   provide: (field) => EditorView.decorations.from(field, (value) => {
     if (!value) return Decoration.none;
+    // Numbered placeholders are stored in tab order, which is not always document
+    // order. Drop overlaps so an empty $1$2 pair cannot throw inside Decoration.set.
     const marks = value.stops
       .slice(Math.max(value.index, 0))
-      .map(([a, b]) => (b > a ? stopMark.range(a, b) : emptyStopMark.range(a)));
-    return Decoration.set(marks, true);
+      .map(([a, b]) => (b > a ? stopMark.range(a, b) : emptyStopMark.range(a)))
+      .sort((a, b) => a.from - b.from || a.to - b.to);
+    const ranges = [];
+    let lastTo = -1;
+    for (const range of marks) {
+      if (range.from < lastTo) continue;
+      if (range.from === lastTo && range.to === lastTo) continue;
+      ranges.push(range);
+      lastTo = Math.max(lastTo, range.to);
+    }
+    return Decoration.set(ranges);
   }),
 });
 
@@ -1840,8 +2508,7 @@ const snippetKeymap = Prec.highest(keymap.of([
 ]));
 
 function insertSnippet(editor, from, to, entry, mode) {
-  const source = mode === "display" ? entry.tex : entry.tex.replace(/\s*\n\s*/g, " ");
-  const { text, stops, exit } = expandSnippet(source, entry.extra);
+  const { text, stops, exit } = snippetFor(entry, mode);
   const prefix = mode ? "" : "$";
   const insert = `${prefix}${text}${prefix}`;
   const fromOffset = editor.posToOffset(from);
@@ -1856,6 +2523,7 @@ function insertSnippet(editor, from, to, entry, mode) {
     editor.replaceRange(insert, from, to);
     if (absolute.length) editor.setSelection(editor.offsetToPos(absolute[0][0]), editor.offsetToPos(absolute[0][1]));
     else editor.setCursor(editor.offsetToPos(exitOffset));
+    try { noteUsed(entry); } catch (e) { /* ranking must not block insertion */ }
     return;
   }
 
@@ -1884,10 +2552,16 @@ function insertSnippet(editor, from, to, entry, mode) {
     effects: setSnippet.of(snippet),
     scrollIntoView: true,
   });
+  try { noteUsed(entry); } catch (e) { /* ranking must not block insertion */ }
 }
 
 function plainText(entry) {
-  return entry.extra ? entry.tex.replace(/[#~]/g, "") : entry.tex;
+  if (entry.extra) return entry.tex.replace(/[#~]/g, "");
+  if (entry.user && hasDollarStops(entry.tex)) {
+    const expanded = expandUserTemplate(entry.tex);
+    if (!expanded.error) return expanded.text;
+  }
+  return entry.tex;
 }
 
 const STRINGS = {
@@ -1902,6 +2576,13 @@ const STRINGS = {
     copyWrapped: "copy wrapped in $ $",
     copied: "Copied: ",
     copyFailed: "Copy failed",
+    openDictionary: "Open personal dictionary",
+    clearStats: "Clear LaTeX usage statistics",
+    statsCleared: "LaTeX usage statistics cleared",
+    dictReadFailed: "Couldn't read the personal dictionary",
+    dictCreateFailed: "Couldn't create the personal dictionary",
+    dictProblem: "Personal dictionary has problems; other lines were loaded",
+    dictMore: "more",
   },
   zh: {
     search: "搜索 LaTeX 写法",
@@ -1914,6 +2595,13 @@ const STRINGS = {
     copyWrapped: "复制（带 $ $）",
     copied: "已复制：",
     copyFailed: "复制失败",
+    openDictionary: "打开个人词典",
+    clearStats: "清除 LaTeX 使用统计",
+    statsCleared: "已清除 LaTeX 使用统计",
+    dictReadFailed: "无法读取个人词典",
+    dictCreateFailed: "无法创建个人词典",
+    dictProblem: "个人词典有问题，其余行已加载",
+    dictMore: "处未显示",
   },
 };
 
@@ -2030,7 +2718,10 @@ class LatexLookupModal extends SuggestModal {
     if (copyOnly) {
       const text = wrap ? `$${plainText(entry)}$` : plainText(entry);
       navigator.clipboard.writeText(text).then(
-        () => new Notice(`${S.copied}${text}`),
+        () => {
+          try { noteUsed(entry); } catch (e) { /* ranking must not block copy */ }
+          new Notice(`${S.copied}${text}`);
+        },
         () => new Notice(S.copyFailed),
       );
       return;
@@ -2042,9 +2733,13 @@ class LatexLookupModal extends SuggestModal {
   }
 }
 
-module.exports = class LatexLookupPlugin extends Plugin {
+class LatexLookupPlugin extends Plugin {
   async onload() {
     S = STRINGS[uiLanguage()];
+    this._dictGen = 0;
+    this._dictErrorSig = null;
+    this.loadUsage();
+    setUsageSaver(() => this.scheduleUsageSave());
     this.registerEditorExtension([snippetField, snippetKeymap, scanCache]);
     const suggest = new LatexAutocomplete(this.app);
     this.registerEditorSuggest(suggest);
@@ -2075,5 +2770,178 @@ module.exports = class LatexLookupPlugin extends Plugin {
       name: S.search,
       callback: open,
     });
+    this.addCommand({
+      id: "open-personal-dictionary",
+      name: S.openDictionary,
+      callback: () => { this.openDictionary(); },
+    });
+    this.addCommand({
+      id: "clear-usage-stats",
+      name: S.clearStats,
+      callback: () => { this.clearUsage(); },
+    });
+
+    this.app.workspace.onLayoutReady(() => {
+      if (this._unloaded) return;
+      this.registerEvent(this.app.vault.on("modify", (file) => this.scheduleDictionaryReload(file)));
+      this.registerEvent(this.app.vault.on("delete", (file) => this.scheduleDictionaryReload(file)));
+      this.registerEvent(this.app.vault.on("create", (file) => this.scheduleDictionaryReload(file)));
+      this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+        if (isDictPath(file && file.path) || isDictPath(oldPath)) this.scheduleDictionaryReload();
+      }));
+      this.reloadDictionary();
+    });
   }
-};
+
+  onunload() {
+    this._unloaded = true;
+    setUsageSaver(null);
+    if (this._dictTimer) window.clearTimeout(this._dictTimer);
+    if (this._usageTimer) {
+      window.clearTimeout(this._usageTimer);
+      this.persistUsage();
+    }
+  }
+
+  usageKey() {
+    let id = "vault";
+    try {
+      if (this.app && this.app.appId) id = String(this.app.appId);
+      else if (this.app && this.app.vault && this.app.vault.getName) id = String(this.app.vault.getName());
+    } catch (e) {
+      id = "vault";
+    }
+    return `latex-autofill-usage-v1:${id}`;
+  }
+
+  loadUsage() {
+    try {
+      const raw = window.localStorage.getItem(this.usageKey());
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      const counts = data && data.counts;
+      if (!counts || typeof counts !== "object") return;
+      const clean = Object.create(null);
+      for (const [id, n] of Object.entries(counts)) {
+        if (typeof id !== "string" || !id || !Number.isFinite(n) || n <= 0) continue;
+        clean[id] = Math.min(MAX_USAGE_COUNT, Math.floor(n));
+      }
+      usageCounts = boundUsage(clean, USAGE_LIMIT);
+    } catch (e) {
+      usageCounts = Object.create(null);
+    }
+  }
+
+  persistUsage() {
+    try {
+      window.localStorage.setItem(this.usageKey(), JSON.stringify({ v: 1, counts: usageCounts }));
+    } catch (e) {
+      // localStorage can throw in private mode or when the quota is full.
+    }
+  }
+
+  scheduleUsageSave() {
+    if (this._unloaded) return;
+    if (this._usageTimer) window.clearTimeout(this._usageTimer);
+    this._usageTimer = window.setTimeout(() => {
+      this._usageTimer = null;
+      this.persistUsage();
+    }, DICT_DEBOUNCE_MS);
+  }
+
+  clearUsage() {
+    usageCounts = Object.create(null);
+    if (this._usageTimer) {
+      window.clearTimeout(this._usageTimer);
+      this._usageTimer = null;
+    }
+    try {
+      window.localStorage.removeItem(this.usageKey());
+    } catch (e) {
+      // ignore quota / private-mode failures
+    }
+    new Notice(S.statsCleared);
+  }
+
+  scheduleDictionaryReload(file) {
+    if (file && !isDictPath(file.path)) return;
+    if (this._dictTimer) window.clearTimeout(this._dictTimer);
+    this._dictTimer = window.setTimeout(() => {
+      this._dictTimer = null;
+      this.reloadDictionary();
+    }, DICT_DEBOUNCE_MS);
+  }
+
+  async reloadDictionary() {
+    if (this._unloaded) return;
+    const gen = ++this._dictGen;
+    const file = this.app.vault.getAbstractFileByPath(DICT_PATH);
+    let text = "";
+    if (file) {
+      try {
+        text = await this.app.vault.read(file);
+      } catch (e) {
+        if (gen !== this._dictGen || this._unloaded) return;
+        new Notice(S.dictReadFailed);
+        return;
+      }
+    }
+    if (gen !== this._dictGen || this._unloaded) return;
+    let built;
+    try {
+      built = rebuildFromDictionary(text);
+    } catch (e) {
+      new Notice(S.dictReadFailed);
+      return;
+    }
+    if (gen !== this._dictGen || this._unloaded) return;
+    ENTRIES = built.entries;
+    const sig = built.errors
+      .map((error) => `${error.line}:${error.code}:${error.target || ""}`)
+      .join("\n");
+    if (sig === this._dictErrorSig) return;
+    this._dictErrorSig = sig;
+    if (!built.errors.length) return;
+    const lang = uiLanguage();
+    const lines = built.errors.slice(0, 6).map((error) => formatDictionaryProblem(error, lang));
+    if (built.errors.length > 6) {
+      const rest = built.errors.length - 6;
+      lines.push(lang === "zh" ? `另有 ${rest} ${S.dictMore}` : `${rest} ${S.dictMore}`);
+    }
+    new Notice([S.dictProblem, ...lines].join("\n"), 10000);
+  }
+
+  async openDictionary() {
+    try {
+      let file = this.app.vault.getAbstractFileByPath(DICT_PATH);
+      if (!file) {
+        const folder = this.app.vault.getAbstractFileByPath(DICT_FOLDER);
+        if (!folder) await this.app.vault.createFolder(DICT_FOLDER);
+        file = await this.app.vault.create(DICT_PATH, DICT_TEMPLATE);
+      }
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(file);
+    } catch (e) {
+      new Notice(S.dictCreateFailed);
+    }
+  }
+}
+
+module.exports = LatexLookupPlugin;
+module.exports.parseDictionary = parseDictionary;
+module.exports.rebuildFromDictionary = rebuildFromDictionary;
+module.exports.searchEntries = searchEntries;
+module.exports.expandSnippet = expandSnippet;
+module.exports.expandUserTemplate = expandUserTemplate;
+module.exports.usageBonus = usageBonus;
+module.exports.bumpUsage = bumpUsage;
+module.exports.buildEntries = buildEntries;
+module.exports.finalizeEntry = finalizeEntry;
+module.exports.hasDollarStops = hasDollarStops;
+module.exports.formatDictionaryProblem = formatDictionaryProblem;
+module.exports.snippetFor = snippetFor;
+module.exports.DICT_PATH = DICT_PATH;
+module.exports.DICT_TEMPLATE = DICT_TEMPLATE;
+module.exports.USAGE_BONUS_CAP = USAGE_BONUS_CAP;
+module.exports.USAGE_LIMIT = USAGE_LIMIT;
+module.exports.pinyinTermScore = pinyinTermScore;
