@@ -58,7 +58,7 @@ const DATA = String.raw`
 关系 ;; 约等于 ;; approx approximately 近似 ;; \approx ;; Approximately equal
 关系 ;; 恒等 ;; equiv identical 等价 同余 ;; \equiv ;; Identical
 关系 ;; 定义为 ;; define definition 记为 def ;; \overset{\text{def}}{=} ;; Defined as
-关系 ;; 相似 同阶 ;; sim similar tilde ;; \sim ;; Similar
+关系 ;; 相似 同阶 ;; sim similar tilde relation relations ;; \sim ;; Similar
 关系 ;; 同构 全等 ;; cong isomorphic congruent ;; \cong ;; Congruent
 关系 ;; 渐近相等 ;; simeq asymptotic ;; \simeq ;; Asymptotic
 关系 ;; 正比于 ;; propto proportional ;; \propto ;; Proportional to

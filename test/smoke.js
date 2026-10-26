@@ -296,6 +296,17 @@ test("usage boost is capped and cannot outrank an exact name", () => {
   assert.deepStrictEqual(empty.map((e) => e.id), ["b", "a"]);
 });
 
+test("relation finds the sim tilde used for 相似", () => {
+  const entries = api.buildEntries();
+  const find = (query, opts) => api.searchEntries(entries, query, { allowFuzzy: false, includeExtra: false, ...opts });
+  for (const query of ["relation", "relations", "similar", "sim", "相似"]) {
+    assert.strictEqual(find(query)[0].tex, "\\sim", query);
+  }
+  assert.strictEqual(find("xiangsi")[0].tex, "\\sim");
+  assert.strictEqual(find("relation", { allowFuzzy: true, includeExtra: true })[0].tex, "\\sim");
+  assert.ok(find("关系").some((e) => e.tex === "\\sim"));
+});
+
 test("pinyin search finds partial syllables, initials, and personal entries", () => {
   const entries = api.buildEntries();
   const find = (query, opts) => api.searchEntries(entries, query, { allowFuzzy: false, ...opts });
